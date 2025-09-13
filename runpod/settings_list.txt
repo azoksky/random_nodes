@@ -1,0 +1,2 @@
+https://raw.githubusercontent.com/azoksky/az-nodes/refs/heads/main/other/runpod/comfy.settings.json,user/default/comfy.settings.json
+https://raw.githubusercontent.com/azoksky/az-nodes/refs/heads/main/other/runpod/rgthree_config.json,custom_nodes/rgthree-comfy/rgthree_config.json

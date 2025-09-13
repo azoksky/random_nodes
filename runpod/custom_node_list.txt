@@ -1,0 +1,16 @@
+https://github.com/ltdrdata/ComfyUI-Impact-Pack.git,1
+https://github.com/ltdrdata/ComfyUI-Impact-Subpack.git,1
+https://github.com/rgthree/rgthree-comfy.git
+https://github.com/ltdrdata/ComfyUI-Manager.git
+https://github.com/Kosinkadink/ComfyUI-Advanced-ControlNet.git
+https://github.com/ssitu/ComfyUI_UltimateSDUpscale.git
+https://github.com/cubiq/ComfyUI_essentials.git
+https://github.com/kijai/ComfyUI-KJNodes.git
+https://github.com/city96/ComfyUI-GGUF.git
+https://github.com/azoksky/RES4LYF.git
+https://github.com/azoksky/random_nodes.git
+https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git
+https://github.com/Fannovel16/ComfyUI-Frame-Interpolation.git
+https://github.com/welltop-cn/ComfyUI-TeaCache.git
+https://github.com/nunchaku-tech/ComfyUI-nunchaku.git
+https://github.com/stduhpf/ComfyUI-WanMoeKSampler.git
