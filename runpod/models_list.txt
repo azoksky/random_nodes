@@ -14,6 +14,7 @@ azoksky/retention,models/vae/wan_vae.safetensors,vae,wan
 azoksky/retention,models/diffusion_models/USO_flux_dev_fp8_scaled.safetensors,diffusion_models,flux
 nunchaku-tech/nunchaku-flux.1-dev,svdq-int4_r32-flux.1-dev.safetensors,diffusion_models,flux
 nunchaku-tech/nunchaku-flux.1-dev,svdq-int4_r32-flux.1-krea-dev.safetensors,diffusion_models,flux
+azoksky/retention,models/model_patches/uso-flux1-projector-v1.safetensors,model_patches,flux
 azoksky/retention,models/text_encoders/uso_t5xxl_fp8_e4m3fn_scaled.safetensors,text_encoders,flux
 azoksky/retention,models/text_encoders/uso_clip_l.safetensors,text_encoders,flux
 azoksky/retention,models/clip_vision/uso_sigclip_vision_patch14_384.safetensors,clip_vision,flux
