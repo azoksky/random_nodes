@@ -17,7 +17,7 @@ azoksky/retention,models/text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors,text_
 azoksky/retention,models/text_encoders/clip_l.safetensors,text_encoders,flux
 azoksky/retention,models/clip_vision/sigclip_vision_patch14_384.safetensors,clip_vision,flux
 azoksky/loras_trained,lora.safetensors,loras,flux
-azoksky/retention,models/vae/uso_wan_vae.safetensors,vae,flux
+azoksky/retention,models/vae/wan_vae.safetensors,vae,flux
 alimama-creative/FLUX.1-Turbo-Alpha,diffusion_pytorch_model.safetensors,loras,flux
 ##UPSCALE
 azoksky/retention,models/upscale_models/4x-UltraSharpV2.safetensors,upscale_models,upscale
