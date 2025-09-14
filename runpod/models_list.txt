@@ -14,19 +14,17 @@ azoksky/retention,models/vae/wan_vae.safetensors,vae,wan
 azoksky/retention,models/diffusion_models/USO_flux_dev_fp8_scaled.safetensors,diffusion_models,flux
 nunchaku-tech/nunchaku-flux.1-dev,svdq-int4_r32-flux.1-dev.safetensors,diffusion_models,flux
 nunchaku-tech/nunchaku-flux.1-dev,svdq-int4_r32-flux.1-krea-dev.safetensors,diffusion_models,flux
-azoksky/retention,models/model_patches/uso-flux1-projector-v1.safetensors,model_patches,flux
-azoksky/retention,models/text_encoders/uso_t5xxl_fp8_e4m3fn_scaled.safetensors,text_encoders,flux
-azoksky/retention,models/text_encoders/uso_clip_l.safetensors,text_encoders,flux
-azoksky/retention,models/clip_vision/uso_sigclip_vision_patch14_384.safetensors,clip_vision,flux
+azoksky/retention,models/text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors,text_encoders,flux
+azoksky/retention,models/text_encoders/clip_l.safetensors,text_encoders,flux
+azoksky/retention,models/clip_vision/sigclip_vision_patch14_384.safetensors,clip_vision,flux
 azoksky/loras_trained,lora.safetensors,loras,flux
-azoksky/retention,models/loras/uso-flux1-dit-lora-v1.safetensors,loras,flux
 azoksky/retention,models/vae/uso_wan_vae.safetensors,vae,flux
 alimama-creative/FLUX.1-Turbo-Alpha,diffusion_pytorch_model.safetensors,loras,flux
 ##UPSCALE
 azoksky/retention,models/upscale_models/4x-UltraSharpV2.safetensors,upscale_models,upscale
 azoksky/retention,models/upscale_models/4x_NMKD-Siax_200k.pth,upscale_models,upscale
 ##QWEN IMG EDIT
-azoksky/retention,models/diffusion_models/svdq-int4_r128-qwen-image-edit-lightningv1.0-8steps.safetensors,diffusion_models,qwen
+azoksky/retention,qwen_image_fp8_e4m3fn.safetensors,diffusion_models,qwen
 Comfy-Org/Qwen-Image_ComfyUI,split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors,text_encoders,qwen
 Comfy-Org/Qwen-Image_ComfyUI,split_files/vae/qwen_image_vae.safetensors,vae,qwen
 azoksky/retention,models/controlnet/Qwen-Image-ControlNet-Inpainting.safetensors,controlnet,qwen
