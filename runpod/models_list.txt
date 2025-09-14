@@ -20,6 +20,8 @@ azoksky/retention,models/loras/adjusted_original_3000_vandumolxyz.safetensors,lo
 azoksky/retention,models/loras/adjusted_original_4000_MOLVANDUXYZ.safetensors,loras,flux
 azoksky/retention,models/loras/original_3000_vandumolxyz.safetensors,loras,flux
 azoksky/retention,models/loras/original_4000_MOLVANDUXYZ.safetensors,loras,flux
+azoksky/retention,models/style_models/flux1-redux-dev.safetensors,style_models,flux
+azoksky/retention,models/clip_vision/sigclip_vision_patch14_384.safetensors,clip_vision,flux
 azoksky/retention,models/vae/flux_vae.safetensors,vae,flux
 alimama-creative/FLUX.1-Turbo-Alpha,diffusion_pytorch_model.safetensors,loras,flux
 ##UPSCALE
