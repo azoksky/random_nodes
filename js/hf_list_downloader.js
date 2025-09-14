@@ -106,6 +106,7 @@ app.registerExtension({
       btnDownload.className = "hfld-btn";
       btnDownload.textContent = "Download";
 
+      // This button refreshes node definitions (same as pressing R)
       const btnPull = document.createElement("button");
       btnPull.className = "hfld-btn";
       btnPull.textContent = "Refresh";
@@ -268,7 +269,45 @@ app.registerExtension({
 
       const selectAll = () => lastRendered.forEach(it => it.cb && (it.cb.checked = true));
       const clearSel  = () => lastRendered.forEach(it => it.cb && (it.cb.checked = false));
-      const refreshComfy  = () => app.refreshNodes();
+
+      // Refresh node definitions (equivalent to pressing "R")
+      const refreshComfy = async () => {
+        btnPull.disabled = true;
+        setMsg("Refreshing node definitions…");
+        try {
+          // Preferred API (matches the "R" hotkey behavior)
+          if (typeof api.refreshNodeDefs === "function") {
+            await api.refreshNodeDefs();
+          }
+          // Some forks expose it on the app object
+          else if (typeof app.refreshNodes === "function") {
+            const res = app.refreshNodes();
+            if (res && typeof res.then === "function") await res;
+          }
+          // Last resort: simulate an "R" key press
+          else {
+            const ev = new KeyboardEvent("keydown", {
+              key: "r",
+              code: "KeyR",
+              keyCode: 82,
+              which: 82,
+              bubbles: true
+            });
+            document.dispatchEvent(ev);
+          }
+
+          // Force UI to redraw after defs refresh
+          if (app?.graph && typeof app.graph.setDirtyCanvas === "function") {
+            app.graph.setDirtyCanvas(true, true);
+          }
+          setMsg("Node definitions refreshed.");
+        } catch (err) {
+          console.error("Node refresh failed:", err);
+          setMsg(err?.message || "Node refresh failed.", true);
+        } finally {
+          btnPull.disabled = false;
+        }
+      };
 
       const downloadOne = async (it) => {
         if (!it?.el) return { ok:false, error:"Bad item" };
@@ -310,6 +349,7 @@ app.registerExtension({
         btnDownload.disabled = true;
         btnRead.disabled = true;
         btnRefresh.disabled = true;
+        btnPull.disabled = true;
         let okCount = 0, errCount = 0;
         const batchStart = performance.now();
 
@@ -322,6 +362,7 @@ app.registerExtension({
         btnDownload.disabled = false;
         btnRead.disabled = false;
         btnRefresh.disabled = false;
+        btnPull.disabled = false;
         if (errCount) setMsg(`Finished with ${okCount} success, ${errCount} error(s) in ${fmtTime(totalMs)}. Hover rows for details.`, true);
         else setMsg(`All ${okCount} item(s) downloaded in ${fmtTime(totalMs)}.`);
       };
