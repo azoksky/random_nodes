@@ -36,3 +36,4 @@ Comfy-Org/Qwen-Image_ComfyUI,split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled
 Comfy-Org/Qwen-Image_ComfyUI,split_files/vae/qwen_image_vae.safetensors,vae,qwen
 azoksky/retention,models/controlnet/Qwen-Image-ControlNet-Inpainting.safetensors,controlnet,qwen
 lightx2v/Qwen-Image-Lightning,Qwen-Image-Lightning-8steps-V2.0.safetensors,loras,qwen
+azoksky/retention,models/loras/qwen_edit/qwen_MCNL_v1.0.safetensors,loras,qwen
