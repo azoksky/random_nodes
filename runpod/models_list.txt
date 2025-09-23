@@ -24,6 +24,7 @@ azoksky/retention,models/loras/adjusted_original_3000_vandumolxyz.safetensors,lo
 azoksky/retention,models/loras/adjusted_original_4000_MOLVANDUXYZ.safetensors,loras,flux
 azoksky/retention,models/loras/original_3000_vandumolxyz.safetensors,loras,flux
 azoksky/retention,models/loras/original_4000_MOLVANDUXYZ.safetensors,loras,flux
+azoksky/retention,models/loras/Samsung_UltraReal.safetensors,loras,flux
 azoksky/retention,models/loras/FLUX.1-dev-Controlnet-Inpainting-Beta.safetensors,controlnet,flux
 azoksky/retention,models/style_models/flux1-redux-dev.safetensors,style_models,flux
 azoksky/retention,models/clip_vision/sigclip_vision_patch14_384.safetensors,clip_vision,flux
