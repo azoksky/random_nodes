@@ -35,6 +35,7 @@ azoksky/retention,models/upscale_models/4x-UltraSharpV2.safetensors,upscale_mode
 azoksky/retention,models/upscale_models/4x_NMKD-Siax_200k.pth,upscale_models,upscale
 ##QWEN IMG EDIT
 azoksky/retention,models/diffusion_models/qwen_image_fp8_e4m3fn.safetensors,diffusion_models,qwen
+nunchaku-tech/nunchaku-qwen-image-edit-2509,svdq-int4_r128-qwen-image-edit-2509.safetensors,diffusion_models,qwen
 Comfy-Org/Qwen-Image_ComfyUI,split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors,text_encoders,qwen
 Comfy-Org/Qwen-Image_ComfyUI,split_files/vae/qwen_image_vae.safetensors,vae,qwen
 azoksky/retention,models/controlnet/Qwen-Image-ControlNet-Inpainting.safetensors,controlnet,qwen
