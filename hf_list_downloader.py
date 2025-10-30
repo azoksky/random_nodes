@@ -19,7 +19,7 @@ MODELS    = Path(os.environ.get("COMFYUI_MODEL_PATH", str(COMFY / "models"))).re
 HF_TOKEN  = os.environ.get("HF_TOKEN") or None
 
 # Default list URL; can be overridden by env var DOWNLOAD_LIST
-LIST_URL_DEFAULT = "https://raw.githubusercontent.com/azoksky/random_nodes/refs/heads/main/runpod/models_list.txt"
+LIST_URL_DEFAULT = "https://pastebin.com/raw/5DZ9aKNQ"
 LIST_URL_ENV = (os.environ.get("MODELS_URL_LIST") or "").strip() or LIST_URL_DEFAULT
 
 # Default category to use when a list line omits category
