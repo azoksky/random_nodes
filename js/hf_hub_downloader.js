@@ -287,8 +287,28 @@ app.registerExtension({
         scheduleFetch();
       });
 
-      destInput.addEventListener("focus", () => {
+      // When focusing: if field is empty, fetch server root (prefers COMFYUI_MODEL_PATH then COMFYUI_PATH on server).
+      destInput.addEventListener("focus", async () => {
         placeDropdown();
+        if (!destInput.value || !destInput.value.trim()) {
+          try {
+            const resp = await api.fetchApi(`/az/listdir`);
+            const data = await resp.json();
+            if (data?.ok && data.root) {
+              const root = (data.root || "").replace(/\\/g, "/");
+              // Only override if dest wasn't already set in node properties
+              if (!this.properties.dest_dir) {
+                destInput.value = root;
+                this.properties.dest_dir = root;
+                if (debounceTimer) clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(fetchChildren, 50);
+                return;
+              }
+            }
+          } catch (e) {
+            // ignore; continue to normal schedule
+          }
+        }
         scheduleFetch();
       });
 
@@ -511,7 +531,7 @@ app.registerExtension({
       };
 
       // Prefill the destInput with the server's working directory (ComfyUI installation/run folder)
-      // The server's /az/listdir with no path returns root = os.path.abspath(os.getcwd()).
+      // The server's /az/listdir with no path returns root = os.path.abspath(os.getcwd()) or env override.
       (async ()=>{
         try {
           const resp = await api.fetchApi(`/az/listdir`);
