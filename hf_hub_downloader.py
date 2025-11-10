@@ -48,8 +48,17 @@ async def start_download(request: web.Request):
         dest_dir = (data.get("dest_dir") or "").strip()
         token = (data.get("token_input") or "").strip()
 
-        if not repo_id or not filename or not dest_dir:
-            return web.json_response({"ok": False, "error": "repo_id, filename, dest_dir are required"}, status=400)
+        # require repo_id and filename, but allow dest_dir to be empty and
+        # fall back to environment-based defaults or cwd
+        if not repo_id or not filename:
+            return web.json_response({"ok": False, "error": "repo_id and filename are required"}, status=400)
+
+        # Prefer env var COMFYUI_MODEL_PATH then COMFYUI_PATH when dest_dir not provided
+        if not dest_dir:
+            env_root = os.environ.get("COMFYUI_MODEL_PATH") or os.environ.get("COMFYUI_PATH")
+            dest_dir = env_root or os.getcwd()
+        # normalize path
+        dest_dir = os.path.abspath(os.path.expanduser(dest_dir))
 
         try:
             os.makedirs(dest_dir, exist_ok=True)
