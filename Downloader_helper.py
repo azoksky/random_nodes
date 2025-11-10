@@ -443,7 +443,17 @@ async def az_listdir(request):
         files:   [ {name, path}, ... ] }
     """
     raw = request.query.get("path", "") or ""
-    abs_root = _safe_expand(raw)
+
+    # Prefer env var COMFYUI_MODEL_PATH, then COMFYUI_PATH when no explicit query provided
+    env_root = os.environ.get("COMFYUI_MODEL_PATH") or os.environ.get("COMFYUI_PATH")
+
+    if raw and raw.strip():
+        abs_root = _safe_expand(raw)
+    else:
+        if env_root and str(env_root).strip():
+            abs_root = _safe_expand(env_root)
+        else:
+            abs_root = _safe_expand(raw)
 
     # If provided path doesn't exist, try parent or fallback to cwd
     root = abs_root
