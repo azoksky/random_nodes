@@ -21,7 +21,7 @@ def _safe_expand(path_str: str) -> str:
     p = (path_str or "").strip()
     if not p:
         return os.path.abspath(os.getcwd())
-    # Special Windows nicety: treat "C:" like "C:\"
+    # Special Windows nicety: treat "C:" like "C:\\"
     if len(p) == 2 and p[1] == ":":
         p = p + os.sep
     # Normalize slashes both ways; expand user
@@ -67,8 +67,18 @@ async def az_listdir(request: web.Request):
       or { ok: false, error: "..." }
     """
     qpath = request.query.get("path", "") or ""
+
+    # Prefer env var COMFYUI_MODEL_PATH, then COMFYUI_PATH when no explicit query provided
+    env_root = os.environ.get("COMFYUI_MODEL_PATH") or os.environ.get("COMFYUI_PATH")
+
     try:
-        abs_root = _safe_expand(qpath)
+        if qpath and qpath.strip():
+            abs_root = _safe_expand(qpath)
+        else:
+            if env_root and str(env_root).strip():
+                abs_root = _safe_expand(env_root)
+            else:
+                abs_root = _safe_expand(qpath)  # falls back to cwd
         sep = os.sep
         folders, files = _listdir(abs_root)
 
