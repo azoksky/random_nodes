@@ -5,6 +5,7 @@ from .path_uploader import PathUploader
 from .Downloader_helper import Aria2Downloader
 from .hf_hub_downloader import hf_hub_downloader
 from .hf_list_downloader import HFListDownloader
+from .wan_first_guiding_node import WanFirstGuidingFrameToVideo
 
 
 NODE_CLASS_MAPPINGS = {
@@ -21,6 +22,7 @@ NODE_CLASS_MAPPINGS = {
     "PathUploader": PathUploader,
     "hf_hub_downloader":hf_hub_downloader,
     "hf_list_downloader": HFListDownloader,
+    "WanFirstGuidingFrameToVideo": WanFirstGuidingFrameToVideo,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -37,10 +39,10 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "PathUploader": "Path Uploader",
     "hf_hub_downloader":"HF Downloader",
     "hf_list_downloader": "HF List Downloader",
+    "WanFirstGuidingFrameToVideo": "Wan First Guiding Frame To Video",
     
 }
 
 WEB_DIRECTORY = "./js"
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
-
