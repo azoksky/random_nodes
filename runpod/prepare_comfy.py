@@ -486,8 +486,11 @@ def main() -> None:
     # 2) Clone ComfyUI core
     if not COMFY.exists():
         clone("https://github.com/comfyanonymous/ComfyUI.git", COMFY, threads)
-        req_path=COMFY / "requirements.txt"
-		subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "-r", str(req_path)])
+        req_path = COMFY / "requirements.txt"
+        if req_path.is_file():
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "-r", str(req_path)])
+        else:
+            print(f"⏩ no requirements.txt found at {req_path}, skipping pip install")
 
     # 3) Fetch & clone custom nodes
     repos = fetch_node_list()
