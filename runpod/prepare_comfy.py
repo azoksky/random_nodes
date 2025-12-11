@@ -91,7 +91,7 @@ def install_missing_from_env(var: str = "MISSING_PACKAGES") -> None:
         return
     for pkg in [p.strip() for p in raw.split(",") if p.strip()]:
         try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "-q", pkg])
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", pkg])
             print(f"✓ installed: {pkg}")
         except Exception as e:
             print(f"✗ error installing {pkg}: {e}")
@@ -486,6 +486,8 @@ def main() -> None:
     # 2) Clone ComfyUI core
     if not COMFY.exists():
         clone("https://github.com/comfyanonymous/ComfyUI.git", COMFY, threads)
+        req_path=COMFY / "requirements.txt"
+		subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "-r", str(req_path)])
 
     # 3) Fetch & clone custom nodes
     repos = fetch_node_list()
