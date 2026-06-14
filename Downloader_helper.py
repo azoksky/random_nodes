@@ -444,16 +444,15 @@ async def az_listdir(request):
     """
     raw = request.query.get("path", "") or ""
 
-    # Prefer env var COMFYUI_MODEL_PATH, then COMFYUI_PATH when no explicit query provided
-    env_root = os.environ.get("COMFYUI_MODEL_PATH") or os.environ.get("COMFYUI_PATH")
+    # Prefer env var MODEL_ZOO_PATH when no explicit query provided; else current working dir
+    env_root = os.environ.get("MODEL_ZOO_PATH")
 
     if raw and raw.strip():
         abs_root = _safe_expand(raw)
+    elif env_root and str(env_root).strip():
+        abs_root = _safe_expand(env_root)
     else:
-        if env_root and str(env_root).strip():
-            abs_root = _safe_expand(env_root)
-        else:
-            abs_root = _safe_expand(raw)
+        abs_root = _safe_expand(os.getcwd())
 
     # If provided path doesn't exist, try parent or fallback to cwd
     root = abs_root
