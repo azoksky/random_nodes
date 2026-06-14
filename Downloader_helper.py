@@ -454,22 +454,30 @@ async def az_listdir(request):
     else:
         abs_root = _safe_expand(os.getcwd())
 
-    # If provided path doesn't exist, try parent or fallback to cwd
+    # If abs_root is an existing dir -> list its children (no filter).
+    # Otherwise treat the last path segment as a prefix and list/filter siblings.
+    prefix = ""
     root = abs_root
-    if not os.path.exists(root):
-        root = os.path.dirname(root) or os.getcwd()
     if not os.path.isdir(root):
+        prefix = os.path.basename(root)
         root = os.path.dirname(root) or os.getcwd()
+        if not os.path.isdir(root):
+            root = os.getcwd()
+            prefix = ""
+
+    pref_lc = prefix.lower()
 
     folders = []
     files = []
     try:
         for name in sorted(os.listdir(root)):
+            if pref_lc and not name.lower().startswith(pref_lc):
+                continue
             full = os.path.join(root, name)
             if os.path.isdir(full):
-                folders.append({"name": name, "path": os.path.join(root, name)})
+                folders.append({"name": name, "path": full})
             else:
-                files.append({"name": name, "path": os.path.join(root, name)})
+                files.append({"name": name, "path": full})
     except Exception:
         pass
 
