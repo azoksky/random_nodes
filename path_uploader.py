@@ -123,21 +123,39 @@ async def az_upload(request: web.Request):
     """
     reader = await request.multipart()
     dest_dir = None
+    abs_dest = None  # set as soon as a valid dest_dir part is seen
 
     temp_path = None
     filename = None
     total = 0
     file_seen = False
 
-    # Iterate parts and handle them immediately. When we see the file part we stream it to a temp file.
+    def _cleanup_temp():
+        try:
+            if temp_path and os.path.exists(temp_path):
+                os.unlink(temp_path)
+        except Exception:
+            pass
+
+    # Iterate parts and handle them immediately. When we see the file part we stream it to disk.
+    # The JS appends dest_dir before file, so abs_dest is known by the time the file arrives and we
+    # can stream straight into the destination filesystem -> finalize with an instant rename instead
+    # of a cross-device copy (matters on RunPod /workspace and Kaggle, where /tmp is a different mount).
     while True:
         field = await reader.next()
         if field is None:
             break
         # text part
         if field.name == "dest_dir":
-            dest_dir_text = await field.text()
-            dest_dir = dest_dir_text
+            dest_dir = await field.text()
+            if dest_dir and dest_dir.strip():
+                cand = _safe_expand(dest_dir)
+                try:
+                    os.makedirs(cand, exist_ok=True)
+                    if os.path.isdir(cand) and os.access(cand, os.W_OK):
+                        abs_dest = cand
+                except Exception:
+                    abs_dest = None
             continue
 
         # file part
@@ -157,13 +175,13 @@ async def az_upload(request: web.Request):
             file_seen = True
             filename = _safe_filename(getattr(field, "filename", "upload.bin"))
 
-            # create temporary file and stream into it
+            # Stream into a temp file on the destination filesystem when known, else system temp.
+            tmp_dir = abs_dest if abs_dest else None
             try:
-                tmp = tempfile.NamedTemporaryFile(delete=False)
+                tmp = tempfile.NamedTemporaryFile(delete=False, dir=tmp_dir, prefix=".azupload-", suffix=".part")
                 temp_path = tmp.name
                 with tmp:
-                    # Use a larger chunk size to improve throughput (e.g., 256 KiB)
-                    CHUNK_SIZE = 262144
+                    CHUNK_SIZE = 1024 * 1024  # 1 MiB
                     while True:
                         chunk = await field.read_chunk(CHUNK_SIZE)
                         if not chunk:
@@ -171,11 +189,7 @@ async def az_upload(request: web.Request):
                         tmp.write(chunk)
                         total += len(chunk)
             except Exception as e:
-                try:
-                    if temp_path and os.path.exists(temp_path):
-                        os.unlink(temp_path)
-                except Exception:
-                    pass
+                _cleanup_temp()
                 return web.json_response({"ok": False, "error": f"Write failed while receiving upload: {e}"}, status=500)
             continue
 
@@ -186,48 +200,38 @@ async def az_upload(request: web.Request):
             pass
 
     if not file_seen or not temp_path:
+        _cleanup_temp()
         return web.json_response({"ok": False, "error": "No file selected. Please choose a file."}, status=400)
 
     if not dest_dir or not dest_dir.strip():
-        try:
-            os.unlink(temp_path)
-        except Exception:
-            pass
+        _cleanup_temp()
         return web.json_response({"ok": False, "error": "Destination folder is empty. Please enter a folder."}, status=400)
 
-    abs_dest = _safe_expand(dest_dir)
-    try:
-        os.makedirs(abs_dest, exist_ok=True)
-    except Exception as e:
+    # If the dest couldn't be prepared during streaming, validate now with specific errors.
+    if abs_dest is None:
+        abs_dest = _safe_expand(dest_dir)
         try:
-            os.unlink(temp_path)
-        except Exception:
-            pass
-        return web.json_response({"ok": False, "error": f"Cannot create destination: {e}"}, status=400)
-
-    if not os.path.isdir(abs_dest):
-        try:
-            os.unlink(temp_path)
-        except Exception:
-            pass
-        return web.json_response({"ok": False, "error": f"Not a directory: {abs_dest}"}, status=400)
-    if not os.access(abs_dest, os.W_OK):
-        try:
-            os.unlink(temp_path)
-        except Exception:
-            pass
-        return web.json_response({"ok": False, "error": f"Destination not writable: {abs_dest}"}, status=400)
+            os.makedirs(abs_dest, exist_ok=True)
+        except Exception as e:
+            _cleanup_temp()
+            return web.json_response({"ok": False, "error": f"Cannot create destination: {e}"}, status=400)
+        if not os.path.isdir(abs_dest):
+            _cleanup_temp()
+            return web.json_response({"ok": False, "error": f"Not a directory: {abs_dest}"}, status=400)
+        if not os.access(abs_dest, os.W_OK):
+            _cleanup_temp()
+            return web.json_response({"ok": False, "error": f"Destination not writable: {abs_dest}"}, status=400)
 
     save_path = os.path.join(abs_dest, filename)
 
     try:
-        shutil.move(temp_path, save_path)
+        # Same filesystem (temp was written into abs_dest) -> atomic rename, no copy.
+        if os.path.dirname(os.path.abspath(temp_path)) == os.path.abspath(abs_dest):
+            os.replace(temp_path, save_path)
+        else:
+            shutil.move(temp_path, save_path)
     except Exception as e:
-        try:
-            if temp_path and os.path.exists(temp_path):
-                os.unlink(temp_path)
-        except Exception:
-            pass
+        _cleanup_temp()
         return web.json_response({"ok": False, "error": f"Failed to move uploaded file into place: {e}"}, status=500)
 
     return web.json_response({
