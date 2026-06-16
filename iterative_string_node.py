@@ -16,7 +16,7 @@ class AzIterativeString:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "name": ("STRING", {"default": "", "multiline": False}),
+                "name": ("STRING", {"default": "output", "multiline": False}),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
@@ -36,4 +36,6 @@ class AzIterativeString:
         key = str(unique_id) if unique_id is not None else "default"
         n = AzIterativeString._counters.get(key, 0) + 1
         AzIterativeString._counters[key] = n
-        return (f"{name}_{n}",)
+        out = f"{name}_{n}"
+        # "ui" feeds the JS preview (onExecuted); "result" is the graph output.
+        return {"ui": {"text": [out]}, "result": (out,)}
