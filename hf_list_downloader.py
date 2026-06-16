@@ -83,9 +83,15 @@ def _atomic_fetch(url: str, dest: Path, timeout: int = 30, attempts: int = 3) ->
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
     last_err = None
+    # Pastebin (and other CDNs) 403 the default "Python-urllib" UA; send a browser one.
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        "Accept": "*/*",
+    })
     for i in range(1, attempts + 1):
         try:
-            with urllib.request.urlopen(url, timeout=timeout) as r, open(tmp, "wb") as f:
+            with urllib.request.urlopen(req, timeout=timeout) as r, open(tmp, "wb") as f:
                 shutil.copyfileobj(r, f)
             tmp.replace(dest)
             return True, None
