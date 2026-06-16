@@ -6,6 +6,7 @@ from .Downloader_helper import Aria2Downloader
 from .hf_hub_downloader import hf_hub_downloader
 from .hf_list_downloader import HFListDownloader
 from .wan_first_guiding_node import WanFirstGuidingFrameToVideo
+from .iterative_string_node import AzIterativeString
 
 
 NODE_CLASS_MAPPINGS = {
@@ -23,6 +24,7 @@ NODE_CLASS_MAPPINGS = {
     "hf_hub_downloader":hf_hub_downloader,
     "hf_list_downloader": HFListDownloader,
     "WanFirstGuidingFrameToVideo": WanFirstGuidingFrameToVideo,
+    "AzIterativeString": AzIterativeString,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -40,7 +42,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "hf_hub_downloader":"HF Downloader",
     "hf_list_downloader": "HF List Downloader",
     "WanFirstGuidingFrameToVideo": "Wan First Guiding Frame To Video",
-    
+    "AzIterativeString": "Iterative String",
 }
 
 WEB_DIRECTORY = "./js"
