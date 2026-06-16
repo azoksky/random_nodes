@@ -299,7 +299,12 @@ app.registerExtension({
         };
         xhr.onerror=()=>{ this._status="Network error"; this._xhr=null; this.setDirtyCanvas(true); };
 
-        xhr.open("POST","/az/upload",true); xhr.send(form);
+        // Use the ComfyUI api base (e.g. "/console") so the POST lands on the same
+        // backend as api.fetchApi calls. A raw "/az/upload" ignores the base and gets
+        // routed to the wrong upstream (and a 1 MB nginx default -> 413) when ComfyUI
+        // is served under a sub-path via reverse proxy.
+        const uploadURL = (api.apiURL ? api.apiURL("/az/upload") : "/az/upload");
+        xhr.open("POST", uploadURL, true); xhr.send(form);
       });
 
       // ===== Cancel =====
