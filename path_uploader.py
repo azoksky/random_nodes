@@ -13,6 +13,14 @@ import shutil
 from aiohttp import web
 from server import PromptServer
 
+# Lift aiohttp's request-body size cap so large model uploads don't 413.
+# ComfyUI defaults to ~100 MB (--max-upload-size); 0 disables the limit.
+# Application._make_request reads this per-request, so mutating it at import works.
+try:
+    PromptServer.instance.app._client_max_size = 0
+except Exception:
+    pass
+
 # ---------- helpers ----------
 _SAN = re.compile(r'[\\:*?"<>|\x00-\x1F]')  # leave / and \ alone for paths
 
