@@ -14,6 +14,9 @@ from subprocess import Popen, DEVNULL
 from aiohttp import web
 from server import PromptServer
 
+from . import az_fs  # registers GET /az/listdir (shared: MODEL_ZOO_PATH default + prefix filter)
+from .az_fs import default_root
+
 # ========= Config =========
 ARIA2_SECRET = os.environ.get("COMFY_ARIA2_SECRET", "comfyui_aria2_secret")
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
@@ -302,7 +305,7 @@ def _negotiate_access(url, token):
 async def aria2_start(request):
     body = await request.json()
     url = (body.get("url") or "").strip()
-    dest_dir = _safe_expand(body.get("dest_dir") or os.getcwd())
+    dest_dir = _safe_expand(body.get("dest_dir") or default_root())
     # IMPORTANT: do NOT auto-fill token from env here (respect rule 2).
     token = (body.get("token") or "").strip()
 
@@ -431,63 +434,6 @@ async def aria2_stop(request):
         return web.json_response({"ok": True})
     except Exception as e:
         return web.json_response({"error": f"aria2c RPC error: {e}"}, status=500)
-
-@PromptServer.instance.routes.get("/az/listdir")
-async def az_listdir(request):
-    """
-    Query:
-      ?path=<path>
-    Returns:
-      { ok: true, root: "<abs>", sep: "\\ or /",
-        folders: [ {name, path}, ... ],
-        files:   [ {name, path}, ... ] }
-    """
-    raw = request.query.get("path", "") or ""
-
-    # Prefer env var MODEL_ZOO_PATH when no explicit query provided; else current working dir
-    env_root = os.environ.get("MODEL_ZOO_PATH")
-
-    if raw and raw.strip():
-        abs_root = _safe_expand(raw)
-    elif env_root and str(env_root).strip():
-        abs_root = _safe_expand(env_root)
-    else:
-        abs_root = _safe_expand(os.getcwd())
-
-    # If abs_root is an existing dir -> list its children (no filter).
-    # Otherwise treat the last path segment as a prefix and list/filter siblings.
-    prefix = ""
-    root = abs_root
-    if not os.path.isdir(root):
-        prefix = os.path.basename(root)
-        root = os.path.dirname(root) or os.getcwd()
-        if not os.path.isdir(root):
-            root = os.getcwd()
-            prefix = ""
-
-    pref_lc = prefix.lower()
-
-    folders = []
-    files = []
-    try:
-        for name in sorted(os.listdir(root)):
-            if pref_lc and not name.lower().startswith(pref_lc):
-                continue
-            full = os.path.join(root, name)
-            if os.path.isdir(full):
-                folders.append({"name": name, "path": full})
-            else:
-                files.append({"name": name, "path": full})
-    except Exception:
-        pass
-
-    return web.json_response({
-        "ok": True,
-        "root": root.replace("\\", "/"),
-        "sep": os.sep,
-        "folders": folders,
-        "files": files
-    })
 
 @PromptServer.instance.routes.get("/tokens")
 async def tokens(request):

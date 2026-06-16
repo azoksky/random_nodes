@@ -8,6 +8,9 @@ from aiohttp import web
 from server import PromptServer
 from huggingface_hub import hf_hub_download
 
+from . import az_fs  # registers GET /az/listdir (shared: MODEL_ZOO_PATH default + prefix filter)
+from .az_fs import default_root
+
 # Env token
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
 
@@ -53,10 +56,9 @@ async def start_download(request: web.Request):
         if not repo_id or not filename:
             return web.json_response({"ok": False, "error": "repo_id and filename are required"}, status=400)
 
-        # Prefer env var COMFYUI_MODEL_PATH then COMFYUI_PATH when dest_dir not provided
+        # Default to MODEL_ZOO_PATH (env), else cwd, when dest_dir not provided
         if not dest_dir:
-            env_root = os.environ.get("COMFYUI_MODEL_PATH") or os.environ.get("COMFYUI_PATH")
-            dest_dir = env_root or os.getcwd()
+            dest_dir = default_root()
         # normalize path
         dest_dir = os.path.abspath(os.path.expanduser(dest_dir))
 

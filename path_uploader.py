@@ -7,111 +7,23 @@ Path Uploader (UI-only) for ComfyUI
 
 import os
 import re
-import pathlib
 import tempfile
 import shutil
 from aiohttp import web
 from server import PromptServer
 
-# Lift aiohttp's request-body size cap so large model uploads don't 413.
-# ComfyUI defaults to ~100 MB (--max-upload-size); 0 disables the limit.
-# Application._make_request reads this per-request, so mutating it at import works.
-try:
-    PromptServer.instance.app._client_max_size = 0
-except Exception:
-    pass
+from . import az_fs  # registers GET /az/listdir (shared: MODEL_ZOO_PATH default + prefix filter)
+from .az_fs import safe_expand as _safe_expand, default_root
 
 # ---------- helpers ----------
 _SAN = re.compile(r'[\\:*?"<>|\x00-\x1F]')  # leave / and \ alone for paths
-
-def _safe_expand(path_str: str) -> str:
-    """Expand ~ and normalize to absolute path (Windows/Linux friendly)."""
-    p = (path_str or "").strip()
-    if not p:
-        return os.path.abspath(os.getcwd())
-    # Special Windows nicety: treat "C:" like "C:\\"
-    if len(p) == 2 and p[1] == ":":
-        p = p + os.sep
-    # Normalize slashes both ways; expand user
-    p = os.path.expanduser(p)
-    return os.path.abspath(p)
 
 def _safe_filename(name: str) -> str:
     base = os.path.basename(name or "")
     base = _SAN.sub("_", base)
     return base or "upload.bin"
 
-def _listdir(path: str):
-    """Return (folders, files) for a directory, sorted."""
-    p = pathlib.Path(_safe_expand(path))
-    if not p.exists():
-        raise FileNotFoundError("Path does not exist")
-    if not p.is_dir():
-        raise NotADirectoryError("Not a directory")
-    folders, files = [], []
-    for entry in p.iterdir():
-        try:
-            if entry.is_dir():
-                folders.append(entry.name)
-            else:
-                files.append(entry.name)
-        except PermissionError:
-            # skip entries we cannot stat
-            continue
-    folders.sort()
-    files.sort()
-    return folders, files
-
 # ---------- routes ----------
-@PromptServer.instance.routes.get("/az/listdir")
-async def az_listdir(request: web.Request):
-    """
-    Query:
-      ?path=<path>
-    Returns:
-      { ok: true, root: "<abs>", sep: "\\ or /",
-        folders: [ {name, path}, ... ],
-        files:   [ {name, path}, ... ] }
-      or { ok: false, error: "..." }
-    """
-    qpath = request.query.get("path", "") or ""
-
-    # Prefer env var COMFYUI_MODEL_PATH, then COMFYUI_PATH when no explicit query provided
-    env_root = os.environ.get("COMFYUI_MODEL_PATH") or os.environ.get("COMFYUI_PATH")
-
-    try:
-        if qpath and qpath.strip():
-            abs_root = _safe_expand(qpath)
-        else:
-            if env_root and str(env_root).strip():
-                abs_root = _safe_expand(env_root)
-            else:
-                abs_root = _safe_expand(qpath)  # falls back to cwd
-        sep = os.sep
-        folders, files = _listdir(abs_root)
-
-        def make_entries(names):
-            out = []
-            for n in names:
-                out.append({"name": n, "path": os.path.join(abs_root, n)})
-            return out
-
-        return web.json_response({
-            "ok": True,
-            "root": abs_root,
-            "sep": sep,
-            "folders": make_entries(folders),
-            "files": make_entries(files),
-        })
-    except Exception as e:
-        return web.json_response({
-            "ok": False,
-            "error": str(e),
-            "root": _safe_expand(qpath),
-            "folders": [],
-            "files": [],
-        }, status=200)
-
 @PromptServer.instance.routes.post("/az/upload")
 async def az_upload(request: web.Request):
     """
@@ -204,8 +116,7 @@ async def az_upload(request: web.Request):
         return web.json_response({"ok": False, "error": "No file selected. Please choose a file."}, status=400)
 
     if not dest_dir or not dest_dir.strip():
-        _cleanup_temp()
-        return web.json_response({"ok": False, "error": "Destination folder is empty. Please enter a folder."}, status=400)
+        dest_dir = default_root()  # MODEL_ZOO_PATH (or cwd) when none supplied
 
     # If the dest couldn't be prepared during streaming, validate now with specific errors.
     if abs_dest is None:
