@@ -15,7 +15,11 @@ from urllib.error import URLError, HTTPError
 # ---------- Paths & env ----------
 COMFY     = Path(os.environ.get("COMFYUI_PATH", "./ComfyUI")).resolve()
 WORKSPACE = COMFY.parent.resolve()
-MODELS    = Path(os.environ.get("COMFYUI_MODEL_PATH", str(COMFY / "models"))).resolve()
+MODELS    = Path(
+    os.environ.get("MODEL_ZOO_PATH")
+    or os.environ.get("COMFYUI_MODEL_PATH")
+    or str(COMFY / "models")
+).resolve()
 HF_TOKEN  = os.environ.get("HF_TOKEN") or None
 
 # Default list URL; can be overridden by env var DOWNLOAD_LIST
