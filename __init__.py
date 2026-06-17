@@ -8,6 +8,7 @@ from .hf_list_downloader import HFListDownloader
 from .wan_first_guiding_node import WanFirstGuidingFrameToVideo
 from .iterative_string_node import AzIterativeString
 from .pad_square_node import AzPadSquareForInpaint
+from .seamless_stitch_node import AzSeamlessStitch
 
 
 NODE_CLASS_MAPPINGS = {
@@ -27,6 +28,7 @@ NODE_CLASS_MAPPINGS = {
     "WanFirstGuidingFrameToVideo": WanFirstGuidingFrameToVideo,
     "AzIterativeString": AzIterativeString,
     "AzPadSquareForInpaint": AzPadSquareForInpaint,
+    "AzSeamlessStitch": AzSeamlessStitch,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -46,6 +48,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "WanFirstGuidingFrameToVideo": "Wan First Guiding Frame To Video",
     "AzIterativeString": "Iterative String",
     "AzPadSquareForInpaint": "Pad Square For Inpaint",
+    "AzSeamlessStitch": "Seamless Stitch",
 }
 
 WEB_DIRECTORY = "./js"

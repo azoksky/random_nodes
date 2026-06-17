@@ -91,8 +91,8 @@ class AzPadSquareForInpaint:
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "MASK", "INT", "INT")
-    RETURN_NAMES = ("image", "mask", "width", "height")
+    RETURN_TYPES = ("IMAGE", "MASK", "MASK", "INT", "INT")
+    RETURN_NAMES = ("image", "mask", "mask_full", "width", "height")
     FUNCTION = "process"
     CATEGORY = "AZ_Nodes"
 
@@ -156,27 +156,29 @@ class AzPadSquareForInpaint:
             if y1 < height:
                 canvas[:, y1:, :, :] = canvas[:, y1 - 1:y1, :, :]
 
-        # combined mask: pad border = 1, inside = painted
-        out_mask = torch.ones((B, 1, height, width), dtype=dtype, device=device)
+        # painted-region fills: pad always 1.0 (full invent over empty canvas).
+        # mask      -> painted region at painted_level (model references content).
+        #              0.7 == ComfyUI brush default; 0.0 keeps raw painted values.
+        # mask_full -> painted region forced to 1.0 regardless of painted_level;
+        #              marks every regenerated pixel, used by the stitch node.
         inside = mask_resized.clamp(0, 1)
-        # Pad stays 1.0 (full invent over empty canvas); painted region is set to
-        # painted_level so the model references the real content underneath rather
-        # than replacing it. 0.7 == ComfyUI's default brush. 1.0 == full regen.
-        # 0.0 keeps the raw painted values (brush opacity/soft edges as drawn).
-        if painted_level > 0:
-            inside = (inside > 1e-4).to(dtype) * painted_level
-        out_mask[:, :, y0:y1, x0:x1] = inside
+        binary = (inside > 1e-4).to(dtype)
+        inside_lvl = binary * painted_level if painted_level > 0 else inside
+        inside_full = binary
 
-        if mask_grow > 0:
-            out_mask = F.max_pool2d(out_mask, mask_grow * 2 + 1, stride=1, padding=mask_grow)
-        if fill_holes:
-            out_mask = _fill_holes(out_mask)
-        if mask_blur > 0:
-            # feather edges only: keep solid interiors at full strength instead of
-            # letting the gaussian drain small regions back to gray.
-            blurred = _gaussian_blur(out_mask, mask_blur)
-            core = -F.max_pool2d(-out_mask, mask_blur * 2 + 1, stride=1, padding=mask_blur)
-            out_mask = torch.maximum(blurred, core)
+        def _finish(inside_vals):
+            mm = torch.ones((B, 1, height, width), dtype=dtype, device=device)
+            mm[:, :, y0:y1, x0:x1] = inside_vals
+            if mask_grow > 0:
+                mm = F.max_pool2d(mm, mask_grow * 2 + 1, stride=1, padding=mask_grow)
+            if fill_holes:
+                mm = _fill_holes(mm)
+            if mask_blur > 0:
+                # feather edges only: keep solid interiors at full strength instead
+                # of letting the gaussian drain small regions back to gray.
+                blurred = _gaussian_blur(mm, mask_blur)
+                core = -F.max_pool2d(-mm, mask_blur * 2 + 1, stride=1, padding=mask_blur)
+                mm = torch.maximum(blurred, core)
+            return mm.squeeze(1).clamp(0, 1)
 
-        out_mask = out_mask.squeeze(1).clamp(0, 1)
-        return (canvas, out_mask, width, height)
+        return (canvas, _finish(inside_lvl), _finish(inside_full), width, height)
