@@ -420,10 +420,11 @@ app.registerExtension({
         const chosen = lastRendered.filter(it => it.cb && it.cb.checked);
         if (!chosen.length) { setMsg("Nothing selected."); return; }
         setMsg(`Downloading ${chosen.length} item(s)…`);
-        btnDownload.disabled = true;
-        btnRead.disabled = true;
-        btnRefresh.disabled = true;
-        btnPull.disabled = true;
+        // Disable everything that could re-render the list (which would detach
+        // the rows whose intervals are tracking live progress).
+        const locked = [btnDownload, btnRead, btnRefresh, btnPull, btnSelectAll,
+                        btnClear, pathInput, searchInput, selCategory];
+        locked.forEach(el => el.disabled = true);
         let okCount = 0, errCount = 0;
         const batchStart = performance.now();
 
@@ -433,10 +434,7 @@ app.registerExtension({
         }
 
         const totalMs = performance.now() - batchStart;
-        btnDownload.disabled = false;
-        btnRead.disabled = false;
-        btnRefresh.disabled = false;
-        btnPull.disabled = false;
+        locked.forEach(el => el.disabled = false);
         if (errCount) setMsg(`Finished with ${okCount} success, ${errCount} error(s) in ${fmtTime(totalMs)}. Hover rows for details.`, true);
         else setMsg(`All ${okCount} item(s) downloaded in ${fmtTime(totalMs)}.`);
       };
@@ -471,6 +469,13 @@ app.registerExtension({
       defOpt.textContent = "All";
       selCategory.appendChild(defOpt);
       selCategory.value = this.properties.category_filter || "All";
+
+      // Stop any in-flight poll loops if the node is deleted mid-download.
+      const prevOnRemoved = this.onRemoved;
+      this.onRemoved = function () {
+        try { items.forEach(it => it.timer && clearInterval(it.timer)); } catch (e) {}
+        return prevOnRemoved ? prevOnRemoved.apply(this, arguments) : undefined;
+      };
 
       return r;
     };
