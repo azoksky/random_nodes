@@ -9,33 +9,30 @@ import { api } from "../../scripts/api.js";
   css.textContent = `
   .hfld-wrap { display:flex; flex-direction:column; gap:8px; width:100%; }
   .hfld-row { display:grid; grid-template-columns: 22px 1fr max-content; align-items:center;
-              padding:6px 8px; border:1px solid #333; border-radius:8px; background:#1f1f1f;
-              position: relative; overflow: hidden; min-height: 32px; box-sizing: border-box; }
+              gap:8px; padding:6px 8px; border:1px solid #333; border-radius:8px; background:#1f1f1f;
+              position: relative; overflow: hidden; min-height: 40px; box-sizing: border-box; }
   .hfld-row > * { position: relative; z-index: 1; }
   .hfld-row div { background: none !important; }
 
-  /* Label styling to prevent height collapse and keep it readable */
-  .hfld-lab { font-size: 12px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Determinate progress fill (width driven by JS) sits behind the content */
+  .hfld-fill { position:absolute !important; left:0; top:0; bottom:0; width:0%;
+               background: rgba(70,130,255,0.30) !important; z-index:0;
+               transition: width .25s linear; pointer-events:none; }
+  /* Indeterminate (unknown total): sliding shimmer */
+  .hfld-row.indet .hfld-fill { width:35% !important; transition:none;
+               animation: hfldSlide 1.1s ease-in-out infinite; }
+  @keyframes hfldSlide { 0% { left:-35%; } 100% { left:100%; } }
 
-  /* Modern downloading animation: center-out fill */
-  .hfld-row.downloading::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background: linear-gradient(90deg, rgba(70,130,255,0.00) 0%, rgba(70,130,255,0.35) 50%, rgba(70,130,255,0.00) 100%);
-    transform: scaleX(0);
-    transform-origin: center center;
-    animation: hfldFill 1.1s ease-in-out infinite;
-    pointer-events: none;
-  }
-  @keyframes hfldFill {
-    from { transform: scaleX(0); }
-    to   { transform: scaleX(1); }
-  }
+  /* Two-line cell: filename + status detail */
+  .hfld-cell { min-width:0; display:flex; flex-direction:column; justify-content:center; }
+  .hfld-lab { font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hfld-detail { font-size: 11px; line-height: 14px; color:#9fb3c8; white-space: nowrap;
+                 overflow: hidden; text-overflow: ellipsis; }
 
   .hfld-row.done { background: rgba(60,200,120,0.18); border-color:#3dc878; }
+  .hfld-row.done .hfld-fill { background: rgba(60,200,120,0.22) !important; }
   .hfld-row.error { background: rgba(220,80,80,0.18); border-color:#e07070; }
+  .hfld-row.error .hfld-detail { color:#f0a0a0; }
 
   .hfld-list { flex: 1; overflow:auto; display:flex; flex-direction:column; gap:6px; }
   .hfld-toolbar { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
@@ -145,6 +142,16 @@ app.registerExtension({
         return `${pad(h)}:${pad(m)}:${pad(ss)}`;
       };
 
+      const fmtBytes = (n) => {
+        n = Number(n) || 0;
+        if (n <= 0) return "0 B";
+        const u = ["B", "KB", "MB", "GB", "TB"];
+        let i = 0, v = n;
+        while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+        return `${v.toFixed(i === 0 || v >= 100 ? 0 : 1)} ${u[i]}`;
+      };
+      const fmtSpeed = (bps) => `${fmtBytes(bps)}/s`;
+
       const getDisplayCategory = (it) => {
         const c = (it?.category ?? "").trim();
         return c || FALLBACK_CATEGORY;
@@ -191,8 +198,15 @@ app.registerExtension({
         toRender.forEach(it => {
           const row = document.createElement("div");
           row.className = "hfld-row";
+
+          const fill = document.createElement("div");
+          fill.className = "hfld-fill";
+
           const cb = document.createElement("input");
           cb.type = "checkbox";
+
+          const cell = document.createElement("div");
+          cell.className = "hfld-cell";
 
           const lab = document.createElement("div");
           lab.className = "hfld-lab";
@@ -203,13 +217,20 @@ app.registerExtension({
           // Keep full info as tooltip (does not affect search)
           lab.title = `${it.repo_id}, ${it.file_in_repo}, ${it.local_subdir}`;
 
+          const detail = document.createElement("div");
+          detail.className = "hfld-detail";
+          detail.textContent = "";
+
+          cell.append(lab, detail);
+
           const timeEl = document.createElement("div");
           timeEl.className = "hfld-time";
           timeEl.textContent = "";
 
-          row.append(cb, lab, timeEl);
+          row.append(fill, cb, cell, timeEl);
           list.appendChild(row);
           it.el = row; it.cb = cb; it.timeEl = timeEl; it.lab = lab;
+          it.detail = detail; it.fill = fill;
         });
       };
 
@@ -309,12 +330,37 @@ app.registerExtension({
         }
       };
 
-      const downloadOne = async (it) => {
-        if (!it?.el) return { ok:false, error:"Bad item" };
-        it.el.classList.remove("done","error");
-        it.el.classList.add("downloading");
+      const updateRow = (it, d) => {
+        if (!it?.el) return;
+        const total = Number(d.total) || 0;
+        const done = Number(d.downloaded) || 0;
+        if (it.timeEl) it.timeEl.textContent = fmtTime((d.elapsed || 0) * 1000);
+        if (total > 0) {
+          it.el.classList.remove("indet");
+          const pct = Math.max(0, Math.min(1, done / total));
+          if (it.fill) it.fill.style.width = (pct * 100).toFixed(1) + "%";
+          if (it.detail) it.detail.textContent =
+            `${fmtSpeed(d.speed)} · ${fmtBytes(done)} / ${fmtBytes(total)} · ${fmtBytes(total - done)} left`;
+        } else {
+          it.el.classList.add("indet");
+          if (it.detail) it.detail.textContent = `${fmtSpeed(d.speed)} · ${fmtBytes(done)}`;
+        }
+      };
+
+      // Start a server-side download, then poll progress until done/error.
+      // Polling (and the server download) keep running even if the node loses
+      // focus / scrolls out of view; on return the UI reflects current state.
+      const downloadOne = (it) => new Promise(async (resolve) => {
+        if (!it?.el) return resolve({ ok:false, error:"Bad item" });
+        if (it.timer) { clearInterval(it.timer); it.timer = null; }
+        it.el.classList.remove("done", "error");
+        it.el.classList.add("downloading", "indet");
         it.el.title = ""; if (it.lab) it.lab.title = "";
-        const t0 = performance.now();
+        if (it.fill) it.fill.style.width = "0%";
+        if (it.detail) it.detail.textContent = "Starting…";
+        if (it.timeEl) it.timeEl.textContent = "";
+
+        let gid;
         try {
           const resp = await api.fetchApi("/hf_list/download", {
             method: "POST",
@@ -325,22 +371,50 @@ app.registerExtension({
             })
           });
           const data = await resp.json();
-          if (!resp.ok || !data.ok) throw new Error(data?.error || `HTTP ${resp.status}`);
-          const t1 = performance.now();
-          it.el.classList.remove("downloading");
-          it.el.classList.add("done");
-          if (it.timeEl) it.timeEl.textContent = fmtTime(t1 - t0);
-          return { ok:true, dst: data.dst, ms: (t1 - t0) };
+          if (!resp.ok || !data.ok || !data.gid) throw new Error(data?.error || `HTTP ${resp.status}`);
+          gid = data.gid;
         } catch (e) {
-          const t1 = performance.now();
-          it.el.classList.remove("downloading");
+          it.el.classList.remove("downloading", "indet");
           it.el.classList.add("error");
-          if (it.timeEl) it.timeEl.textContent = fmtTime(t1 - t0);
-          const errMsg = e?.message || "Download failed";
-          it.el.title = errMsg; if (it.lab) it.lab.title = errMsg;
-          return { ok:false, error: errMsg, ms: (t1 - t0) };
+          const errMsg = e?.message || "Failed to start";
+          if (it.detail) it.detail.textContent = errMsg;
+          if (it.lab) it.lab.title = errMsg;
+          return resolve({ ok:false, error: errMsg });
         }
-      };
+        it.gid = gid;
+
+        const poll = async () => {
+          let d;
+          try {
+            const r = await api.fetchApi(`/hf_list/progress?gid=${encodeURIComponent(gid)}`);
+            d = await r.json();
+            if (!r.ok || !d.ok) throw new Error(d?.error || `HTTP ${r.status}`);
+          } catch (e) {
+            return; // transient; keep polling
+          }
+          updateRow(it, d);
+          if (d.state === "done") {
+            clearInterval(it.timer); it.timer = null;
+            it.el.classList.remove("downloading", "indet");
+            it.el.classList.add("done");
+            if (it.fill) it.fill.style.width = "100%";
+            const size = Number(d.total) || Number(d.downloaded) || 0;
+            if (it.detail) it.detail.textContent = `Done · ${fmtBytes(size)}`;
+            resolve({ ok:true, dst: d.dst, ms: (d.elapsed || 0) * 1000 });
+          } else if (d.state === "error") {
+            clearInterval(it.timer); it.timer = null;
+            it.el.classList.remove("downloading", "indet");
+            it.el.classList.add("error");
+            if (it.fill) it.fill.style.width = "0%";
+            const errMsg = d.error || "Download failed";
+            if (it.detail) it.detail.textContent = errMsg;
+            if (it.lab) it.lab.title = errMsg;
+            resolve({ ok:false, error: errMsg, ms: (d.elapsed || 0) * 1000 });
+          }
+        };
+        it.timer = setInterval(poll, 400);
+        poll();
+      });
 
       const downloadSelected = async () => {
         const chosen = lastRendered.filter(it => it.cb && it.cb.checked);

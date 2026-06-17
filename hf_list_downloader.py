@@ -1,14 +1,17 @@
 # hf_list_downloader.py
 # -*- coding: utf-8 -*-
 import os
-import json
+import time
+import threading
+import uuid
 import shutil
 from pathlib import Path
-from typing import List, Tuple
+from typing import Tuple
 
 from aiohttp import web
 from server import PromptServer
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_url
+import requests
 import urllib.request
 from urllib.error import URLError, HTTPError
 
@@ -181,7 +184,94 @@ async def hf_list_refresh(request):
         return web.json_response({"ok": False, "error": err or f"Failed to fetch from {url}"}, status=502)
     return web.json_response({"ok": True, "file": str(path), "url": url})
 
-# ---------- API: download one ----------
+# ---------- background download with live progress ----------
+# Downloads run in a daemon thread so they continue regardless of UI focus;
+# the frontend polls /hf_list/progress for bytes/speed/elapsed. Streaming
+# straight into the target dir (.part -> os.replace) keeps it atomic & fast.
+_jobs = {}
+_jobs_lock = threading.Lock()
+
+
+def _new_job():
+    gid = uuid.uuid4().hex
+    with _jobs_lock:
+        # prune old finished jobs so the dict doesn't grow forever
+        if len(_jobs) > 200:
+            stale = [k for k, v in _jobs.items() if v["state"] in ("done", "error")]
+            for k in stale[:100]:
+                _jobs.pop(k, None)
+        _jobs[gid] = {
+            "state": "starting", "downloaded": 0, "total": 0,
+            "speed": 0.0, "elapsed": 0.0, "dst": None, "error": None,
+            "cancel": False,
+        }
+    return gid
+
+
+def _upd(gid, **kw):
+    with _jobs_lock:
+        if gid in _jobs:
+            _jobs[gid].update(kw)
+
+
+def _cancelled(gid):
+    with _jobs_lock:
+        return bool(_jobs.get(gid, {}).get("cancel"))
+
+
+def _download_worker(gid, repo_id, file_in_repo, local_subdir):
+    tmp = None
+    try:
+        target_dir = (MODELS / local_subdir.strip("/\\"))
+        target_dir.mkdir(parents=True, exist_ok=True)
+        dst = target_dir / Path(file_in_repo).name
+        tmp = dst.with_suffix(dst.suffix + ".part")
+
+        url = hf_hub_url(repo_id=repo_id, filename=file_in_repo)
+        headers = {"User-Agent": "random_nodes-hf-list/1.0"}
+        if HF_TOKEN:
+            headers["Authorization"] = f"Bearer {HF_TOKEN}"
+
+        _upd(gid, state="running")
+        t0 = time.time()
+        last_t, last_b, downloaded = t0, 0, 0
+
+        with requests.get(url, headers=headers, stream=True,
+                          timeout=(30, 120), allow_redirects=True) as r:
+            r.raise_for_status()
+            total = int(r.headers.get("Content-Length")
+                        or r.headers.get("X-Linked-Size") or 0)
+            _upd(gid, total=total)
+            with open(tmp, "wb") as f:
+                for chunk in r.iter_content(chunk_size=1024 * 1024):
+                    if _cancelled(gid):
+                        raise RuntimeError("Cancelled by user")
+                    if not chunk:
+                        continue
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    now = time.time()
+                    if now - last_t >= 0.25:
+                        _upd(gid, downloaded=downloaded,
+                             speed=(downloaded - last_b) / (now - last_t),
+                             elapsed=now - t0)
+                        last_t, last_b = now, downloaded
+
+        os.replace(tmp, dst)
+        _upd(gid, state="done", downloaded=downloaded,
+             total=(total or downloaded), speed=0.0,
+             elapsed=time.time() - t0, dst=str(dst))
+    except Exception as e:
+        try:
+            if tmp is not None and tmp.exists():
+                tmp.unlink()
+        except Exception:
+            pass
+        _upd(gid, state="error", speed=0.0,
+             error=f"{type(e).__name__}: {e}")
+
+
+# ---------- API: start a download (returns a job id immediately) ----------
 @PromptServer.instance.routes.post("/hf_list/download")
 async def hf_list_download(request):
     body = await request.json()
@@ -190,57 +280,42 @@ async def hf_list_download(request):
     local_subdir = (body.get("local_subdir") or "").strip()
 
     if not repo_id or not file_in_repo or not local_subdir:
-        return web.json_response({"ok": False, "error": "Invalid or incomplete line data (repo_id,file_in_repo,local_subdir required)."}, status=400)
+        return web.json_response({"ok": False, "error": "repo_id,file_in_repo,local_subdir required."}, status=400)
 
-    stage_dir = (WORKSPACE / "_hfstage")
+    gid = _new_job()
+    t = threading.Thread(
+        target=_download_worker,
+        args=(gid, repo_id, file_in_repo, local_subdir),
+        daemon=True,
+    )
+    t.start()
+    return web.json_response({"ok": True, "gid": gid})
+
+
+# ---------- API: poll progress ----------
+@PromptServer.instance.routes.get("/hf_list/progress")
+async def hf_list_progress(request):
+    gid = request.query.get("gid", "")
+    with _jobs_lock:
+        job = _jobs.get(gid)
+        snap = dict(job) if job else None
+    if not snap:
+        return web.json_response({"ok": False, "error": "unknown gid"}, status=404)
+    snap.pop("cancel", None)
+    snap["ok"] = True
+    return web.json_response(snap)
+
+
+# ---------- API: cancel ----------
+@PromptServer.instance.routes.post("/hf_list/cancel")
+async def hf_list_cancel(request):
     try:
-        stage_dir.mkdir(parents=True, exist_ok=True)
-    except Exception as e:
-        return web.json_response({"ok": False, "error": f"Cannot create staging dir {stage_dir}: {e}"}, status=500)
-
-    target_dir = (MODELS / local_subdir.strip("/\\"))
-    try:
-        target_dir.mkdir(parents=True, exist_ok=True)
-    except Exception as e:
-        return web.json_response({"ok": False, "error": f"Cannot create target dir {target_dir}: {e}"}, status=400)
-
-    try:
-        downloaded = hf_hub_download(
-            repo_id=repo_id,
-            filename=file_in_repo,
-            token=HF_TOKEN,
-            local_dir=str(stage_dir),
-        )
-        src = Path(downloaded)
-        dst = (target_dir / src.name)
-
-        try:
-            shutil.move(str(src), str(dst))
-        except PermissionError as e:
-            return web.json_response({"ok": False, "error": f"Permission denied moving to {dst}: {e}"}, status=403)
-        except OSError as e:
-            return web.json_response({"ok": False, "error": f"Filesystem error moving to {dst}: {e}"}, status=500)
-
-        return web.json_response({
-            "ok": True,
-            "dst": str(dst),
-            "repo_id": repo_id,
-            "file_in_repo": file_in_repo,
-            "local_subdir": local_subdir,
-        })
-    except HTTPError as he:
-        return web.json_response({"ok": False, "error": f"HuggingFace HTTP {he.code} {he.reason} for {repo_id}/{file_in_repo}"}, status=502)
-    except URLError as ue:
-        return web.json_response({"ok": False, "error": f"Network error contacting HuggingFace: {ue.reason}"}, status=502)
-    except Exception as e:
-        return web.json_response({"ok": False, "error": f"Download failed for {repo_id}/{file_in_repo}: {type(e).__name__}: {e}"}, status=500)
-    finally:
-        try:
-            if stage_dir.exists():
-                shutil.rmtree(stage_dir, ignore_errors=True)
-                print(f"🧹 Cleaned up staging folder: {stage_dir}")
-        except Exception as e:
-            print(f"⚠ Failed to remove staging folder {stage_dir}: {e}")
+        body = await request.json()
+    except Exception:
+        body = {}
+    gid = (body.get("gid") or "").strip()
+    _upd(gid, cancel=True)
+    return web.json_response({"ok": True})
 
 class HFListDownloader:
     @classmethod
