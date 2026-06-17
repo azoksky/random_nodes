@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-Pad-to-square + combined inpaint mask, in one node.
+Pad-to-target + combined inpaint mask, in one node.
 
-Takes an IMAGE and its painted MASK, resizes the image to fit a target box
-(keeping aspect), pads the remainder, and emits a single combined MASK where:
-  - the padded border  -> 1 (inpaint it)
-  - inside the image   -> the painted mask
-The pad region is derived from geometry, not by re-detecting the pad color, so
-there's no Color-To-Mask threshold/lanczos-seam fragility. Replaces
-Resize Image v2 + Color To Mask + Combine Masks + Grow Mask With Blur.
+Resizes IMAGE to fit a target box (keep aspect), pads the rest, and emits a
+single combined MASK: padded border -> 1, inside -> the painted mask. The pad
+mask is geometric (no Color-To-Mask / lanczos-seam fragility).
+
+pad_mode="edge" replicates the photo's border pixels into the pad region so
+there's NO hard color edge for an inpaint/controlnet to reproduce as a seam.
+grow / blur / fill_holes mirror KJNodes GrowMaskWithBlur.
+
+Replaces Resize Image v2 + Color To Mask + Combine Masks + Grow Mask With Blur.
 """
 
 import torch
@@ -45,6 +47,21 @@ def _gaussian_blur(mask, radius):
     return m
 
 
+def _fill_holes(mask):
+    # mask: (B,1,H,W) -> binary fill enclosed holes, like KJ's fill_holes
+    try:
+        import numpy as np
+        import scipy.ndimage as ndi
+    except Exception:
+        return mask
+    arr = (mask.squeeze(1).detach().cpu().numpy() > 0.5)
+    out = np.empty(arr.shape, dtype=np.float32)
+    for i in range(arr.shape[0]):
+        out[i] = ndi.binary_fill_holes(arr[i]).astype(np.float32)
+    t = torch.from_numpy(out).to(device=mask.device, dtype=mask.dtype)
+    return t.unsqueeze(1)
+
+
 class AzPadSquareForInpaint:
     @classmethod
     def INPUT_TYPES(cls):
@@ -57,6 +74,7 @@ class AzPadSquareForInpaint:
                     ["lanczos", "bicubic", "bilinear", "area", "nearest-exact"],
                     {"default": "lanczos"},
                 ),
+                "pad_mode": (["edge", "color"], {"default": "edge"}),
                 "pad_color": ("STRING", {"default": "0,0,0"}),
                 "crop_position": (
                     ["center", "top", "bottom", "left", "right"],
@@ -65,6 +83,7 @@ class AzPadSquareForInpaint:
                 "divisible_by": ("INT", {"default": 16, "min": 1, "max": 256, "step": 1}),
                 "mask_grow": ("INT", {"default": 0, "min": 0, "max": 256, "step": 1}),
                 "mask_blur": ("INT", {"default": 0, "min": 0, "max": 256, "step": 1}),
+                "fill_holes": ("BOOLEAN", {"default": False}),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -76,8 +95,8 @@ class AzPadSquareForInpaint:
     FUNCTION = "process"
     CATEGORY = "AZ_Nodes"
 
-    def process(self, image, width, height, upscale_method, pad_color,
-                crop_position, divisible_by, mask_grow, mask_blur, mask=None):
+    def process(self, image, width, height, upscale_method, pad_mode, pad_color,
+                crop_position, divisible_by, mask_grow, mask_blur, fill_holes, mask=None):
         B, H, W, C = image.shape
         device, dtype = image.device, image.dtype
 
@@ -113,22 +132,36 @@ class AzPadSquareForInpaint:
         pad_w, pad_h = width - new_w, height - new_h
         x0 = 0 if crop_position == "left" else pad_w if crop_position == "right" else pad_w // 2
         y0 = 0 if crop_position == "top" else pad_h if crop_position == "bottom" else pad_h // 2
+        x1, y1 = x0 + new_w, y0 + new_h
 
-        # padded image canvas filled with pad_color
+        # build canvas, place image
         rgb = _parse_color(pad_color)
         canvas = torch.empty((B, height, width, C), dtype=dtype, device=device)
         for ci in range(min(C, 3)):
             canvas[..., ci] = rgb[ci] / 255.0
         if C > 3:
             canvas[..., 3:] = 1.0
-        canvas[:, y0:y0 + new_h, x0:x0 + new_w, :] = img_resized
+        canvas[:, y0:y1, x0:x1, :] = img_resized
+
+        # edge-replicate padding => no hard photo/pad seam for the model to keep
+        if pad_mode == "edge":
+            if x0 > 0:
+                canvas[:, y0:y1, :x0, :] = canvas[:, y0:y1, x0:x0 + 1, :]
+            if x1 < width:
+                canvas[:, y0:y1, x1:, :] = canvas[:, y0:y1, x1 - 1:x1, :]
+            if y0 > 0:
+                canvas[:, :y0, :, :] = canvas[:, y0:y0 + 1, :, :]
+            if y1 < height:
+                canvas[:, y1:, :, :] = canvas[:, y1 - 1:y1, :, :]
 
         # combined mask: pad border = 1, inside = painted
         out_mask = torch.ones((B, 1, height, width), dtype=dtype, device=device)
-        out_mask[:, :, y0:y0 + new_h, x0:x0 + new_w] = mask_resized.clamp(0, 1)
+        out_mask[:, :, y0:y1, x0:x1] = mask_resized.clamp(0, 1)
 
         if mask_grow > 0:
             out_mask = F.max_pool2d(out_mask, mask_grow * 2 + 1, stride=1, padding=mask_grow)
+        if fill_holes:
+            out_mask = _fill_holes(out_mask)
         if mask_blur > 0:
             out_mask = _gaussian_blur(out_mask, mask_blur)
 
