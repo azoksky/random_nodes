@@ -7,6 +7,7 @@ from .hf_hub_downloader import hf_hub_downloader
 from .hf_list_downloader import HFListDownloader
 from .wan_first_guiding_node import WanFirstGuidingFrameToVideo
 from .iterative_string_node import AzIterativeString
+from .pad_square_node import AzPadSquareForInpaint
 
 
 NODE_CLASS_MAPPINGS = {
@@ -25,6 +26,7 @@ NODE_CLASS_MAPPINGS = {
     "hf_list_downloader": HFListDownloader,
     "WanFirstGuidingFrameToVideo": WanFirstGuidingFrameToVideo,
     "AzIterativeString": AzIterativeString,
+    "AzPadSquareForInpaint": AzPadSquareForInpaint,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -43,6 +45,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "hf_list_downloader": "HF List Downloader",
     "WanFirstGuidingFrameToVideo": "Wan First Guiding Frame To Video",
     "AzIterativeString": "Iterative String",
+    "AzPadSquareForInpaint": "Pad Square For Inpaint",
 }
 
 WEB_DIRECTORY = "./js"
