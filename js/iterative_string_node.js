@@ -42,18 +42,11 @@ app.registerExtension({
       const r = onCreated ? onCreated.apply(this, arguments) : undefined;
       injectCSSOnce();
 
-      // Keep the real "name" widget for value/serialization, but hide it and
-      // drive it from our styled input instead.
-      const nameWidget = (this.widgets || []).find((w) => w.name === "name");
-      const getName = () => (nameWidget ? (nameWidget.value ?? "") : "");
-      const setName = (v) => { if (nameWidget) nameWidget.value = v; };
-      if (nameWidget) {
-        // Current ComfyUI frontend hides via the `hidden` flag; the old
-        // type/computeSize trick is ignored. Set all three for compatibility.
-        nameWidget.hidden = true;
-        nameWidget.type = "hidden";
-        nameWidget.computeSize = () => [0, -4];
-      }
+      // ComfyUI auto-creates a native widget for the "name" STRING input.
+      // Remove it; our styled DOM widget below becomes the value carrier so
+      // there's exactly one field and nothing hidden.
+      const idx = (this.widgets || []).findIndex((w) => w.name === "name");
+      if (idx !== -1) this.widgets.splice(idx, 1);
 
       let nextN = 1; // best-guess counter for the live preview before a run
 
@@ -68,7 +61,7 @@ app.registerExtension({
       input.className = "az-iter-input";
       input.type = "text";
       input.placeholder = "output";
-      input.value = getName();
+      input.value = "output"; // default; overridden by setValue on graph load
 
       const preview = document.createElement("div");
       preview.className = "az-iter-preview";
@@ -87,7 +80,7 @@ app.registerExtension({
       wrap.appendChild(preview);
 
       const showLive = () => {
-        text.textContent = `${getName()}_${nextN}`;
+        text.textContent = `${input.value}_${nextN}`;
         badge.textContent = "next";
         dot.classList.remove("live");
       };
@@ -97,9 +90,15 @@ app.registerExtension({
         dot.classList.add("live");
       };
 
-      input.addEventListener("input", () => { setName(input.value); showLive(); });
+      input.addEventListener("input", () => showLive());
 
-      this.addDOMWidget("az_iter_ui", "", wrap, { serialize: false });
+      // Our styled input IS the "name" widget: its value serializes to the
+      // backend in place of the removed native one.
+      this.addDOMWidget("name", "string", wrap, {
+        serialize: true,
+        getValue: () => input.value,
+        setValue: (v) => { input.value = v ?? ""; showLive(); },
+      });
 
       // Show the exact string the backend produced after each run.
       const onExec = this.onExecuted;
@@ -112,15 +111,6 @@ app.registerExtension({
           const m = String(val).match(/_(\d+)$/);
           if (m) nextN = parseInt(m[1], 10) + 1;
         }
-      };
-
-      // Re-sync the styled input after a saved graph loads (widget values are
-      // applied during configure, which can run after onNodeCreated).
-      const onConfigure = this.onConfigure;
-      this.onConfigure = function () {
-        onConfigure?.apply(this, arguments);
-        input.value = getName();
-        showLive();
       };
 
       showLive();
