@@ -81,7 +81,7 @@ class AzPadSquareForInpaint:
                     {"default": "center"},
                 ),
                 "divisible_by": ("INT", {"default": 16, "min": 1, "max": 256, "step": 1}),
-                "solid_mask": ("BOOLEAN", {"default": True}),
+                "painted_level": ("FLOAT", {"default": 0.7, "min": 0.0, "max": 1.0, "step": 0.05}),
                 "mask_grow": ("INT", {"default": 0, "min": 0, "max": 256, "step": 1}),
                 "mask_blur": ("INT", {"default": 0, "min": 0, "max": 256, "step": 1}),
                 "fill_holes": ("BOOLEAN", {"default": False}),
@@ -97,7 +97,7 @@ class AzPadSquareForInpaint:
     CATEGORY = "AZ_Nodes"
 
     def process(self, image, width, height, upscale_method, pad_mode, pad_color,
-                crop_position, divisible_by, solid_mask, mask_grow, mask_blur,
+                crop_position, divisible_by, painted_level, mask_grow, mask_blur,
                 fill_holes, mask=None):
         B, H, W, C = image.shape
         device, dtype = image.device, image.dtype
@@ -159,11 +159,12 @@ class AzPadSquareForInpaint:
         # combined mask: pad border = 1, inside = painted
         out_mask = torch.ones((B, 1, height, width), dtype=dtype, device=device)
         inside = mask_resized.clamp(0, 1)
-        # MaskEditor's brush opacity (default 0.7) makes painted pixels gray, so
-        # the painted area gets weaker inpaint than the solid pad. Lift any painted
-        # pixel to 1.0 so painted == outpainted.
-        if solid_mask:
-            inside = (inside > 1e-4).to(dtype)
+        # Pad stays 1.0 (full invent over empty canvas); painted region is set to
+        # painted_level so the model references the real content underneath rather
+        # than replacing it. 0.7 == ComfyUI's default brush. 1.0 == full regen.
+        # 0.0 keeps the raw painted values (brush opacity/soft edges as drawn).
+        if painted_level > 0:
+            inside = (inside > 1e-4).to(dtype) * painted_level
         out_mask[:, :, y0:y1, x0:x1] = inside
 
         if mask_grow > 0:
