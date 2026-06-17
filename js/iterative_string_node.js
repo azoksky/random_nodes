@@ -48,8 +48,11 @@ app.registerExtension({
       const getName = () => (nameWidget ? (nameWidget.value ?? "") : "");
       const setName = (v) => { if (nameWidget) nameWidget.value = v; };
       if (nameWidget) {
-        nameWidget.computeSize = () => [0, -4];
+        // Current ComfyUI frontend hides via the `hidden` flag; the old
+        // type/computeSize trick is ignored. Set all three for compatibility.
+        nameWidget.hidden = true;
         nameWidget.type = "hidden";
+        nameWidget.computeSize = () => [0, -4];
       }
 
       let nextN = 1; // best-guess counter for the live preview before a run
