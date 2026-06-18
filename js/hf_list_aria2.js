@@ -1,4 +1,7 @@
-// js/hf_list_downloader.js
+// js/hf_list_aria2.js
+// List downloader that pushes each file through aria2c (-c -x16 -s16).
+// Shares the hfld-* styling injected by hf_list_downloader.js; talks to the
+// /hf_aria2/* routes instead of /hf_list/*.
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
@@ -13,30 +16,22 @@ import { api } from "../../scripts/api.js";
               position: relative; overflow: hidden; min-height: 40px; box-sizing: border-box; }
   .hfld-row > * { position: relative; z-index: 1; }
   .hfld-row div { background: none !important; }
-
-  /* Determinate progress fill (width driven by JS) sits behind the content,
-     a solid blue bar that grows across the whole row as bytes arrive. */
   .hfld-fill { position:absolute !important; left:0; top:0; bottom:0; width:0%;
                background: linear-gradient(90deg, rgba(38,110,255,0.55), rgba(70,140,255,0.65)) !important;
                z-index:0; transition: width .25s linear; pointer-events:none; }
-  /* Indeterminate (unknown total): sliding shimmer */
   .hfld-row.indet .hfld-fill { width:35% !important; transition:none;
                animation: hfldSlide 1.1s ease-in-out infinite; }
   @keyframes hfldSlide { 0% { left:-35%; } 100% { left:100%; } }
-
-  /* Two-line cell: filename (left) + centered status detail */
   .hfld-cell { min-width:0; display:flex; flex-direction:column; justify-content:center; }
   .hfld-lab { font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .hfld-detail { font-size: 11px; line-height: 15px; color:#cfe0f5; text-align:center;
                  font-variant-numeric: tabular-nums; white-space: nowrap;
                  overflow: hidden; text-overflow: ellipsis; min-height:15px; }
   .hfld-row.downloading .hfld-detail { color:#eaf2ff; font-weight:600; }
-
   .hfld-row.done { background: rgba(60,200,120,0.18); border-color:#3dc878; }
   .hfld-row.done .hfld-fill { background: rgba(60,200,120,0.30) !important; }
   .hfld-row.error { background: rgba(220,80,80,0.18); border-color:#e07070; }
   .hfld-row.error .hfld-detail { color:#f0a0a0; }
-
   .hfld-list { flex: 1; overflow:auto; display:flex; flex-direction:column; gap:6px; }
   .hfld-toolbar { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
   .hfld-btn, .hfld-input { height:26px; border-radius:6px; border:1px solid #444; background:#2a2a2a; color:#ddd; padding:0 8px; }
@@ -50,9 +45,9 @@ import { api } from "../../scripts/api.js";
 })();
 
 app.registerExtension({
-  name: "comfyui.hf_list_downloader",
+  name: "comfyui.hf_list_aria2",
   beforeRegisterNodeDef(nodeType, nodeData) {
-    if (nodeData?.name !== "hf_list_downloader") return;
+    if (nodeData?.name !== "hf_list_aria2") return;
 
     const orig = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
@@ -67,7 +62,6 @@ app.registerExtension({
       const wrap = document.createElement("div");
       wrap.className = "hfld-wrap";
 
-      // Toolbar
       const bar = document.createElement("div");
       bar.className = "hfld-toolbar";
 
@@ -76,11 +70,9 @@ app.registerExtension({
       pathInput.placeholder = "Path to download_list.txt";
       pathInput.value = this.properties.list_path;
 
-      // Category dropdown (always includes 'All' first)
       const selCategory = document.createElement("select");
       selCategory.className = "hfld-input hfld-category";
 
-      // Search box (case-insensitive, min 3 characters)
       const searchInput = document.createElement("input");
       searchInput.className = "hfld-input hfld-search";
       searchInput.placeholder = "Search… (min 3 chars)";
@@ -104,31 +96,26 @@ app.registerExtension({
 
       const btnDownload = document.createElement("button");
       btnDownload.className = "hfld-btn";
-      btnDownload.textContent = "Download";
+      btnDownload.textContent = "Download (aria2)";
 
-      // This button refreshes node definitions (same as pressing R)
       const btnPull = document.createElement("button");
       btnPull.className = "hfld-btn";
       btnPull.textContent = "Refresh";
 
-      // Order: path, category, search, then actions
       bar.append(pathInput, selCategory, searchInput, btnRead, btnRefresh, btnSelectAll, btnClear, btnDownload, btnPull);
 
-      // List
       const list = document.createElement("div");
       list.className = "hfld-list";
 
-      // Message line
       const msg = document.createElement("div");
       msg.className = "hfld-msg";
 
       wrap.append(bar, list, msg);
 
-      const widget = this.addDOMWidget("hfld_ui", "HF List Downloader", wrap);
+      const widget = this.addDOMWidget("hfld_ui", "HF List Aria2 Downloader", wrap);
       widget.computeSize = () => [this.size[0] - 20, 440];
 
-      // State
-      let items = []; // {id, category, repo_id, file_in_repo, local_subdir, el, cb, timeEl, lab}
+      let items = [];
       let lastRendered = [];
       const ALL = "All";
       const FALLBACK_CATEGORY = "Misc";
@@ -160,7 +147,6 @@ app.registerExtension({
         return c || FALLBACK_CATEGORY;
       };
 
-      // Build dropdown options from current items; 'All' first
       const buildCategoryOptions = () => {
         const unique = new Set();
         items.forEach(it => unique.add(getDisplayCategory(it)));
@@ -175,13 +161,11 @@ app.registerExtension({
         selCategory.appendChild(makeOpt(ALL));
         sorted.forEach(c => selCategory.appendChild(makeOpt(c)));
 
-        // Restore persisted selection or fallback to ALL
         const desired = this.properties.category_filter || ALL;
         const allowed = new Set([ALL, ...sorted]);
         selCategory.value = allowed.has(desired) ? desired : ALL;
       };
 
-      // Render based on category + search filters
       const render = () => {
         list.innerHTML = "";
         const selectedCat = selCategory.value || ALL;
@@ -214,10 +198,8 @@ app.registerExtension({
           const lab = document.createElement("div");
           lab.className = "hfld-lab";
           lab.style.userSelect = "text";
-          // Show only file name and destination folder
           const baseName = (it.file_in_repo || "").split("/").pop() || it.file_in_repo;
           lab.textContent = `${baseName} → ${it.local_subdir}`;
-          // Keep full info as tooltip (does not affect search)
           lab.title = `${it.repo_id}, ${it.file_in_repo}, ${it.local_subdir}`;
 
           const detail = document.createElement("div");
@@ -242,11 +224,10 @@ app.registerExtension({
         this.properties.list_path = p;
         setMsg("Reading list…");
         try {
-          const resp = await api.fetchApi(`/hf_list/read?path=${encodeURIComponent(p)}`);
+          const resp = await api.fetchApi(`/hf_aria2/read?path=${encodeURIComponent(p)}`);
           const data = await resp.json();
           if (!resp.ok || !data.ok) throw new Error(data?.error || `HTTP ${resp.status}`);
 
-          // Normalize items; ensure category exists (fallback to 'Misc' if server didn't supply)
           items = Array.isArray(data.items) ? data.items.map(it => ({
             ...it,
             category: (typeof it.category === "string" && it.category.trim()) ? it.category.trim() : FALLBACK_CATEGORY
@@ -274,7 +255,7 @@ app.registerExtension({
         setMsg("Refreshing list from internet…");
         btnRefresh.disabled = true;
         try {
-          const resp = await api.fetchApi("/hf_list/refresh", {
+          const resp = await api.fetchApi("/hf_aria2/refresh", {
             method: "POST",
             body: JSON.stringify({ path: p })
           });
@@ -282,7 +263,6 @@ app.registerExtension({
           if (!resp.ok || !data.ok) throw new Error(data?.error || `HTTP ${resp.status}`);
 
           setMsg(`Refreshed from ${data.url} → ${data.file}. Loading…`);
-          // Immediately read after successful refresh
           await readList();
         } catch (e) {
           setMsg(e?.message || "Refresh failed.", true);
@@ -294,33 +274,21 @@ app.registerExtension({
       const selectAll = () => lastRendered.forEach(it => it.cb && (it.cb.checked = true));
       const clearSel  = () => lastRendered.forEach(it => it.cb && (it.cb.checked = false));
 
-      // Refresh node definitions (equivalent to pressing "R")
       const refreshComfy = async () => {
         btnPull.disabled = true;
         setMsg("Refreshing node definitions…");
         try {
-          // Preferred API (matches the "R" hotkey behavior)
           if (typeof api.refreshNodeDefs === "function") {
             await api.refreshNodeDefs();
-          }
-          // Some forks expose it on the app object
-          else if (typeof app.refreshNodes === "function") {
+          } else if (typeof app.refreshNodes === "function") {
             const res = app.refreshNodes();
             if (res && typeof res.then === "function") await res;
-          }
-          // Last resort: simulate an "R" key press
-          else {
+          } else {
             const ev = new KeyboardEvent("keydown", {
-              key: "r",
-              code: "KeyR",
-              keyCode: 82,
-              which: 82,
-              bubbles: true
+              key: "r", code: "KeyR", keyCode: 82, which: 82, bubbles: true
             });
             document.dispatchEvent(ev);
           }
-
-          // Force UI to redraw after defs refresh
           if (app?.graph && typeof app.graph.setDirtyCanvas === "function") {
             app.graph.setDirtyCanvas(true, true);
           }
@@ -350,9 +318,6 @@ app.registerExtension({
         }
       };
 
-      // Start a server-side download, then poll progress until done/error.
-      // Polling (and the server download) keep running even if the node loses
-      // focus / scrolls out of view; on return the UI reflects current state.
       const downloadOne = (it) => new Promise(async (resolve) => {
         if (!it?.el) return resolve({ ok:false, error:"Bad item" });
         if (it.timer) { clearInterval(it.timer); it.timer = null; }
@@ -365,7 +330,7 @@ app.registerExtension({
 
         let gid;
         try {
-          const resp = await api.fetchApi("/hf_list/download", {
+          const resp = await api.fetchApi("/hf_aria2/download", {
             method: "POST",
             body: JSON.stringify({
               repo_id: it.repo_id,
@@ -389,7 +354,7 @@ app.registerExtension({
         const poll = async () => {
           let d;
           try {
-            const r = await api.fetchApi(`/hf_list/progress?gid=${encodeURIComponent(gid)}`);
+            const r = await api.fetchApi(`/hf_aria2/progress?gid=${encodeURIComponent(gid)}`);
             d = await r.json();
             if (!r.ok || !d.ok) throw new Error(d?.error || `HTTP ${r.status}`);
           } catch (e) {
@@ -422,9 +387,7 @@ app.registerExtension({
       const downloadSelected = async () => {
         const chosen = lastRendered.filter(it => it.cb && it.cb.checked);
         if (!chosen.length) { setMsg("Nothing selected."); return; }
-        setMsg(`Downloading ${chosen.length} item(s)…`);
-        // Disable everything that could re-render the list (which would detach
-        // the rows whose intervals are tracking live progress).
+        setMsg(`Downloading ${chosen.length} item(s) via aria2…`);
         const locked = [btnDownload, btnRead, btnRefresh, btnPull, btnSelectAll,
                         btnClear, pathInput, searchInput, selCategory];
         locked.forEach(el => el.disabled = true);
@@ -442,7 +405,6 @@ app.registerExtension({
         else setMsg(`All ${okCount} item(s) downloaded in ${fmtTime(totalMs)}.`);
       };
 
-      // Wire up
       btnRead.addEventListener("click", readList);
       btnRefresh.addEventListener("click", refreshList);
       btnSelectAll.addEventListener("click", selectAll);
@@ -450,22 +412,18 @@ app.registerExtension({
       btnDownload.addEventListener("click", downloadSelected);
       btnPull.addEventListener("click", refreshComfy);
 
-      // Persist category selection and re-render on change
       selCategory.addEventListener("change", () => {
         this.properties.category_filter = selCategory.value || ALL;
         render();
       });
 
-      // Persist search query and re-render on change
       searchInput.addEventListener("input", () => {
         this.properties.search_query = (searchInput.value || "");
         render();
       });
 
-      // Node canvas sizing
       this.size = [570, 500];
 
-      // Initialize dropdown with default until list is read
       selCategory.innerHTML = "";
       const defOpt = document.createElement("option");
       defOpt.value = "All";
@@ -473,7 +431,6 @@ app.registerExtension({
       selCategory.appendChild(defOpt);
       selCategory.value = this.properties.category_filter || "All";
 
-      // Stop any in-flight poll loops if the node is deleted mid-download.
       const prevOnRemoved = this.onRemoved;
       this.onRemoved = function () {
         try { items.forEach(it => it.timer && clearInterval(it.timer)); } catch (e) {}
