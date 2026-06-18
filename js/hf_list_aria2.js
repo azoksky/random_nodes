@@ -15,7 +15,7 @@ import { api } from "../../scripts/api.js";
               gap:8px; padding:6px 8px; border:1px solid #333; border-radius:8px; background:#1f1f1f;
               position: relative; overflow: hidden; min-height: 40px; box-sizing: border-box; }
   .hfld-row > * { position: relative; z-index: 1; }
-  .hfld-row div { background: none !important; }
+  .hfld-row div:not(.hfld-fill) { background: none !important; }
   .hfld-fill { position:absolute !important; left:0; top:0; bottom:0; width:0%;
                background: linear-gradient(90deg, rgba(38,110,255,0.55), rgba(70,140,255,0.65)) !important;
                z-index:0; transition: width .25s linear; pointer-events:none; }

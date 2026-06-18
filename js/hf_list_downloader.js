@@ -12,7 +12,7 @@ import { api } from "../../scripts/api.js";
               gap:8px; padding:6px 8px; border:1px solid #333; border-radius:8px; background:#1f1f1f;
               position: relative; overflow: hidden; min-height: 40px; box-sizing: border-box; }
   .hfld-row > * { position: relative; z-index: 1; }
-  .hfld-row div { background: none !important; }
+  .hfld-row div:not(.hfld-fill) { background: none !important; }
 
   /* Determinate progress fill (width driven by JS) sits behind the content,
      a solid blue bar that grows across the whole row as bytes arrive. */
