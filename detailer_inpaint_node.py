@@ -53,6 +53,26 @@ def _resize_bhwc(t, w, h, method):
     ).movedim(1, -1)
 
 
+def _color_match(refined, original, keep):
+    # Shift the refined crop's per-channel mean/std to the original's, measured
+    # over the kept (unmasked) surroundings, so the inpaint tone matches.
+    # refined/original: (H,W,C); keep: (H,W) weight in [0,1].
+    w = keep
+    wsum = w.sum()
+    if wsum < 16:
+        return refined
+    eps = 1e-5
+    out = refined.clone()
+    for c in range(refined.shape[-1]):
+        o, i = original[..., c], refined[..., c]
+        o_mean = (o * w).sum() / wsum
+        i_mean = (i * w).sum() / wsum
+        o_std = torch.sqrt(((o - o_mean) ** 2 * w).sum() / wsum + eps)
+        i_std = torch.sqrt(((i - i_mean) ** 2 * w).sum() / wsum + eps)
+        out[..., c] = (i - i_mean) / i_std * o_std + o_mean
+    return out.clamp(0, 1)
+
+
 def _ksample(model, seed, steps, cfg, sampler_name, scheduler,
              positive, negative, latent, denoise):
     latent_image = latent["samples"]
@@ -96,6 +116,7 @@ class AzInpaintCropStitch:
                 "upscale": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 8.0, "step": 0.1}),
                 "mask_expand": ("INT", {"default": 4, "min": 0, "max": 256, "step": 1}),
                 "blend": ("INT", {"default": 16, "min": 0, "max": 256, "step": 1}),
+                "color_match": ("BOOLEAN", {"default": False}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
                 "steps": ("INT", {"default": 20, "min": 1, "max": 1000}),
                 "cfg": ("FLOAT", {"default": 7.0, "min": 0.0, "max": 100.0, "step": 0.1}),
@@ -115,7 +136,7 @@ class AzInpaintCropStitch:
     CATEGORY = "AZ_Nodes"
 
     def _one(self, model, positive, negative, vae, img, msk, P, model_patch, cn_strength):
-        (padding, upscale, mask_expand, blend,
+        (padding, upscale, mask_expand, blend, color_match,
          seed, steps, cfg, sampler_name, scheduler, denoise) = P
         H, W, C = img.shape
         device = img.device
@@ -168,6 +189,9 @@ class AzInpaintCropStitch:
         refined = vae.decode(latent["samples"])[:, :, :, :C].to(device)
         refined_crop = _resize_bhwc(refined, cw, ch, "lanczos").clamp(0, 1)[0]
 
+        if color_match:
+            refined_crop = _color_match(refined_crop, crop_img, (1.0 - mb)[0, 0])
+
         # (7) feather the mask (solid interior, soft edge) and overlay
         sm = mb
         if blend > 0:
@@ -184,7 +208,7 @@ class AzInpaintCropStitch:
         return out, full
 
     def run(self, model, positive, negative, vae, image, mask,
-            padding, upscale, mask_expand, blend,
+            padding, upscale, mask_expand, blend, color_match,
             seed, steps, cfg, sampler_name, scheduler, denoise,
             model_patch=None, cn_strength=1.0):
         B, H, W, C = image.shape
@@ -203,7 +227,7 @@ class AzInpaintCropStitch:
 
         outs, masks = [], []
         for b in range(B):
-            P = (padding, upscale, mask_expand, blend,
+            P = (padding, upscale, mask_expand, blend, color_match,
                  seed + b, steps, cfg, sampler_name, scheduler, denoise)
             o, mm = self._one(model, positive, negative, vae,
                               image[b], m[b], P, model_patch, cn_strength)
