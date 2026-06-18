@@ -10,7 +10,7 @@ from .wan_first_guiding_node import WanFirstGuidingFrameToVideo
 from .iterative_string_node import AzIterativeString
 from .pad_square_node import AzPadSquareForInpaint
 from .seamless_stitch_node import AzSeamlessStitch
-from .detailer_inpaint_node import AzDetailerInpaint
+from .detailer_inpaint_node import AzInpaintCropStitch
 
 
 NODE_CLASS_MAPPINGS = {
@@ -32,7 +32,7 @@ NODE_CLASS_MAPPINGS = {
     "AzIterativeString": AzIterativeString,
     "AzPadSquareForInpaint": AzPadSquareForInpaint,
     "AzSeamlessStitch": AzSeamlessStitch,
-    "AzDetailerInpaint": AzDetailerInpaint,
+    "AzDetailerInpaint": AzInpaintCropStitch,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -54,7 +54,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "AzIterativeString": "Iterative String",
     "AzPadSquareForInpaint": "Pad Square For Inpaint",
     "AzSeamlessStitch": "Seamless Stitch",
-    "AzDetailerInpaint": "Detailer Inpaint (Crop & Stitch)",
+    "AzDetailerInpaint": "Inpaint (Crop & Stitch)",
 }
 
 WEB_DIRECTORY = "./js"
