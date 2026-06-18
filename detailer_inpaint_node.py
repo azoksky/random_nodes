@@ -53,22 +53,21 @@ def _resize_bhwc(t, w, h, method):
     ).movedim(1, -1)
 
 
-def _color_match(refined, original, keep):
-    # Shift the refined crop's per-channel mean/std to the original's, measured
-    # over the kept (unmasked) surroundings, so the inpaint tone matches.
-    # refined/original: (H,W,C); keep: (H,W) weight in [0,1].
-    w = keep
-    wsum = w.sum()
-    if wsum < 16:
+def _color_match(refined, original, src, ref):
+    # Retarget the inpainted region's per-channel mean/std to the surrounding
+    # original tone: measure refined over the masked region (src), original over
+    # the unmasked surroundings (ref). refined/original: (H,W,C); src/ref: (H,W).
+    ss, rs = src.sum(), ref.sum()
+    if ss < 16 or rs < 16:
         return refined
     eps = 1e-5
     out = refined.clone()
     for c in range(refined.shape[-1]):
-        o, i = original[..., c], refined[..., c]
-        o_mean = (o * w).sum() / wsum
-        i_mean = (i * w).sum() / wsum
-        o_std = torch.sqrt(((o - o_mean) ** 2 * w).sum() / wsum + eps)
-        i_std = torch.sqrt(((i - i_mean) ** 2 * w).sum() / wsum + eps)
+        i, o = refined[..., c], original[..., c]
+        i_mean = (i * src).sum() / ss
+        i_std = torch.sqrt(((i - i_mean) ** 2 * src).sum() / ss + eps)
+        o_mean = (o * ref).sum() / rs
+        o_std = torch.sqrt(((o - o_mean) ** 2 * ref).sum() / rs + eps)
         out[..., c] = (i - i_mean) / i_std * o_std + o_mean
     return out.clamp(0, 1)
 
@@ -190,7 +189,7 @@ class AzInpaintCropStitch:
         refined_crop = _resize_bhwc(refined, cw, ch, "lanczos").clamp(0, 1)[0]
 
         if color_match:
-            refined_crop = _color_match(refined_crop, crop_img, (1.0 - mb)[0, 0])
+            refined_crop = _color_match(refined_crop, crop_img, mb[0, 0], (1.0 - mb)[0, 0])
 
         # (7) feather the mask (solid interior, soft edge) and overlay
         sm = mb
