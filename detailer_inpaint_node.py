@@ -11,6 +11,12 @@ resolution and stitch back seamlessly; nothing outside the mask is VAE-softened.
 Geometry mirrors Impact-Pack's enhance_detail; the sampling half is real
 inpainting (neutral-fill + grown noise mask + full denoise) rather than a
 low-denoise detail pass.
+
+Optional Z-Image / Qwen "Fun" inpaint controlnet: connect its MODEL_PATCH and
+the node patches the model with the CROPPED+UPSCALED image+mask (not the full
+frame) so the controlnet sees the same resolution the sampler runs at — which
+is what it's designed for. Feeding it the full image while sampling a crop is
+exactly what makes it go haywire (it squishes the whole image into the crop).
 """
 
 import torch
@@ -20,6 +26,21 @@ import comfy.utils
 import comfy.sample
 import comfy.samplers
 import latent_preview
+
+try:
+    from comfy_extras.nodes_model_patch import ZImageFunControlnet as _FunControlNode
+except Exception:
+    _FunControlNode = None
+
+
+def _patch_funcontrol(model, model_patch, vae, up_img, up_cm, strength):
+    # up_img: (1,uh,uw,C); up_cm: (1,1,uh,uw), 1 == inpaint area. The node
+    # inverts/rounds the mask itself, so the soft mask is fine here.
+    mask = up_cm[:, 0]  # (1,uh,uw) standard MASK
+    return _FunControlNode().diffsynth_controlnet(
+        model, model_patch, vae, image=None, strength=float(strength),
+        inpaint_image=up_img[:, :, :, :3], mask=mask,
+    )[0]
 
 
 def _gaussian_blur(mask, radius):
@@ -88,6 +109,10 @@ class AzInpaintCropStitch:
                 "scheduler": (comfy.samplers.KSampler.SCHEDULERS,),
                 "denoise": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
             },
+            "optional": {
+                "model_patch": ("MODEL_PATCH",),
+                "cn_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.05}),
+            },
         }
 
     RETURN_TYPES = ("IMAGE", "MASK")
@@ -112,7 +137,8 @@ class AzInpaintCropStitch:
             return None
         return nx1, ny1, nx2, ny2
 
-    def _one(self, model, positive, negative, vae, img, msk, params):
+    def _one(self, model, positive, negative, vae, img, msk, params,
+             model_patch, cn_strength):
         (crop_factor, guide_size, max_size, grow_mask, mask_blur, fill_masked,
          seed, steps, cfg, sampler_name, scheduler, denoise) = params
         H, W, C = img.shape
@@ -149,17 +175,28 @@ class AzInpaintCropStitch:
         up_img = _resize_bhwc(crop_img.unsqueeze(0), uw, uh, "lanczos").clamp(0, 1)
         up_cm = F.interpolate(cm, size=(uh, uw), mode="bilinear", align_corners=False).clamp(0, 1)
 
+        use_cn = model_patch is not None and _FunControlNode is not None
+
         enc = up_img
-        if fill_masked:
+        if fill_masked and not use_cn:
             # neutral-fill masked pixels (== VAEEncodeForInpaint) so the model
             # paints fresh content from the prompt instead of the original.
+            # In controlnet mode the patch neutral-fills its own conditioning,
+            # so the sampled latent keeps real pixels (noise mask preserves them).
             mexp = up_cm.movedim(1, -1)           # (1,uh,uw,1)
             enc = up_img.clone()
             enc[:, :, :, :3] = (enc[:, :, :, :3] - 0.5) * (1 - mexp) + 0.5
 
         latent = {"samples": vae.encode(enc[:, :, :, :3]), "noise_mask": up_cm}
 
-        latent = _ksample(model, seed, steps, cfg, sampler_name, scheduler,
+        # Fun controlnet: patch the model with THIS crop's image+mask so it works
+        # at the sampling resolution instead of being rescaled from the full frame.
+        sample_model = model
+        if use_cn:
+            sample_model = _patch_funcontrol(model, model_patch, vae,
+                                             up_img, up_cm, cn_strength)
+
+        latent = _ksample(sample_model, seed, steps, cfg, sampler_name, scheduler,
                            positive, negative, latent, denoise)
         refined = vae.decode(latent["samples"])   # (1,uh,uw,C')
         refined = refined[:, :, :, :C].to(device)
@@ -176,7 +213,8 @@ class AzInpaintCropStitch:
 
     def run(self, model, positive, negative, vae, image, mask,
             crop_factor, guide_size, max_size, grow_mask, mask_blur, fill_masked,
-            seed, steps, cfg, sampler_name, scheduler, denoise):
+            seed, steps, cfg, sampler_name, scheduler, denoise,
+            model_patch=None, cn_strength=1.0):
         B, H, W, C = image.shape
 
         m = mask
@@ -196,7 +234,7 @@ class AzInpaintCropStitch:
             p = (crop_factor, guide_size, max_size, grow_mask, mask_blur, fill_masked,
                  seed + b, steps, cfg, sampler_name, scheduler, denoise)
             o, mm = self._one(model, positive, negative, vae,
-                              image[b], m[b], p)
+                              image[b], m[b], p, model_patch, cn_strength)
             outs.append(o)
             masks.append(mm)
         return (torch.stack(outs, 0), torch.stack(masks, 0))
