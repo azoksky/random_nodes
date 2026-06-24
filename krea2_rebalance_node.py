@@ -28,15 +28,18 @@ class AzKrea2ProjectorRebalance:
         return {
             "required": {
                 "model": ("MODEL",),
-                "mode": (["multiply", "add"], {"default": "multiply"}),
+                "mode": (["add", "multiply"], {"default": "add"}),
                 "weights": ("STRING", {
-                    "default": "1,1,1,1,1,1,1,1,1,1,1,1",
+                    "default": "-24.195,-32.266,92.695,125.977,176.379,98.633,99.555,-359.75,-127.92,-190.32,-152.17,28.199",
                     "multiline": False,
-                    "tooltip": "12 comma-separated per-layer values (layer 0..11).",
+                    "tooltip": "12 comma-separated per-layer values (layer 0..11). "
+                               "Defaults = the catbox LoRA's projector diffs. "
+                               "add mode: lower 'strength' if it goes black; multiply mode: use values near 1.0.",
                 }),
                 "strength": ("FLOAT", {
-                    "default": 1.0, "min": -10.0, "max": 10.0, "step": 0.05,
-                    "tooltip": "Scales the whole patch. Lower if output destabilizes.",
+                    "default": 0.1, "min": -10.0, "max": 10.0, "step": 0.05,
+                    "tooltip": "Scales the whole patch. With the big default add-values, "
+                               "keep this small (~0.05-0.2) to avoid NaN/black.",
                 }),
             },
         }
