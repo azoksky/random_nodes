@@ -13,6 +13,7 @@ from .seamless_stitch_node import AzSeamlessStitch
 from .detailer_inpaint_node import AzInpaintCropStitch
 from .krea2_rebalance_node import AzKrea2ProjectorRebalance
 from .krea2_gated_cond_node import AzKrea2GatedConditioning
+from .krea2_gated_rebalance_node import AzKrea2GatedRebalance
 
 
 NODE_CLASS_MAPPINGS = {
@@ -37,6 +38,7 @@ NODE_CLASS_MAPPINGS = {
     "AzDetailerInpaint": AzInpaintCropStitch,
     "AzKrea2ProjectorRebalance": AzKrea2ProjectorRebalance,
     "AzKrea2GatedConditioning": AzKrea2GatedConditioning,
+    "AzKrea2GatedRebalance": AzKrea2GatedRebalance,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -61,6 +63,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "AzDetailerInpaint": "Inpaint (Crop & Stitch)",
     "AzKrea2ProjectorRebalance": "Krea2 Text-Fusion Rebalance (Projector)",
     "AzKrea2GatedConditioning": "Krea2 Timestep-Gated Conditioning",
+    "AzKrea2GatedRebalance": "Krea2 Gated Rebalance (all-in-one)",
 }
 
 WEB_DIRECTORY = "./js"
