@@ -12,7 +12,7 @@ import { api } from "../../scripts/api.js";
   css.textContent = `
   .hfld-wrap { display:flex; flex-direction:column; gap:8px; width:100%; }
   .hfld-row { display:grid; grid-template-columns: 22px 1fr max-content; align-items:center;
-              gap:8px; padding:6px 8px; border:1px solid #333; border-radius:8px; background:#1f1f1f;
+              gap:8px; padding:6px 8px; border:1px solid var(--border-color,#333); border-radius:8px; background:var(--comfy-input-bg,#1f1f1f);
               position: relative; overflow: hidden; min-height: 40px; box-sizing: border-box; }
   .hfld-row > * { position: relative; z-index: 1; }
   .hfld-row div:not(.hfld-fill) { background: none !important; }
@@ -24,7 +24,7 @@ import { api } from "../../scripts/api.js";
   @keyframes hfldSlide { 0% { left:-35%; } 100% { left:100%; } }
   .hfld-cell { min-width:0; display:flex; flex-direction:column; justify-content:center; }
   .hfld-lab { font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .hfld-detail { font-size: 11px; line-height: 15px; color:#cfe0f5; text-align:center;
+  .hfld-detail { font-size: 11px; line-height: 15px; color:var(--input-text,#cfe0f5); text-align:center;
                  font-variant-numeric: tabular-nums; white-space: nowrap;
                  overflow: hidden; text-overflow: ellipsis; min-height:15px; }
   .hfld-row.downloading .hfld-detail { color:#eaf2ff; font-weight:600; }
@@ -34,10 +34,10 @@ import { api } from "../../scripts/api.js";
   .hfld-row.error .hfld-detail { color:#f0a0a0; }
   .hfld-list { flex: 1; overflow:auto; display:flex; flex-direction:column; gap:6px; }
   .hfld-toolbar { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
-  .hfld-btn, .hfld-input { height:26px; border-radius:6px; border:1px solid #444; background:#2a2a2a; color:#ddd; padding:0 8px; }
+  .hfld-btn, .hfld-input { height:26px; border-radius:6px; border:1px solid var(--border-color,#444); background:var(--comfy-input-bg,#2a2a2a); color:var(--input-text,#ddd); padding:0 8px; }
   .hfld-btn { cursor:pointer; }
-  .hfld-msg { color:#9ab; font-size:12px; min-height:16px; }
-  .hfld-time { font-size:11px; color:#cbd; padding-left:10px; white-space:nowrap; }
+  .hfld-msg { color:var(--descrip-text,#9ab); font-size:12px; min-height:16px; }
+  .hfld-time { font-size:11px; color:var(--descrip-text,#cbd); padding-left:10px; white-space:nowrap; }
   .hfld-input.hfld-search { width: 200px; }
   .hfld-input.hfld-category { min-width: 140px; }
   `;
@@ -120,7 +120,7 @@ app.registerExtension({
       const ALL = "All";
       const FALLBACK_CATEGORY = "Misc";
 
-      const setMsg = (t, isErr=false) => { msg.textContent = t || ""; msg.style.color = isErr? "#e88" : "#9ab"; };
+      const setMsg = (t, isErr=false) => { msg.textContent = t || ""; msg.style.color = isErr? "var(--error-text,#e88)" : "var(--descrip-text,#9ab)"; };
 
       const fmtTime = (ms) => {
         ms = Math.max(0, Math.floor(ms));

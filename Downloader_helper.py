@@ -453,14 +453,21 @@ async def tokens_resolve(request):
     return web.json_response({"token": token or ""})
 
 # ========= UI-only node shell =========
-class Aria2Downloader:
+from comfy_api.latest import io
+
+
+class Aria2Downloader(io.ComfyNode):
     @classmethod
-    def INPUT_TYPES(cls):
-        return {"required": {}}
+    def define_schema(cls):
+        return io.Schema(
+            node_id="Aria2Downloader",
+            display_name="Aria2 Downloader",
+            category="AZ_Nodes",
+            description="UI-only: download a URL to a folder via aria2 (widgets are in JS).",
+            inputs=[],
+            outputs=[],
+        )
 
-    RETURN_TYPES = ()
-    FUNCTION = "noop"
-    CATEGORY = "AZ_Nodes"
-
-    def noop(self):
-        return ()
+    @classmethod
+    def execute(cls):
+        return io.NodeOutput()

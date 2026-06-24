@@ -19,12 +19,12 @@ function injectCSSOnce() {
   style.id = id;
   style.textContent =
     ".az-row{width:100%}\
-     .az-btn{padding:8px 14px;border:1px solid #555;border-radius:6px;background:#2f75ff;color:#fff;cursor:pointer}\
+     .az-btn{padding:8px 14px;border:1px solid var(--border-color,#555);border-radius:6px;background:var(--p-primary-color,#2f75ff);color:var(--p-button-text-primary-color,#fff);cursor:pointer}\
      .az-btn:disabled{opacity:.6;cursor:not-allowed}\
-     .az-btn-secondary{background:#333;color:#ddd}\
+     .az-btn-secondary{background:var(--comfy-input-bg,#333);color:var(--input-text,#ddd)}\
      .az-flex{display:flex;gap:8px;align-items:center;justify-content:center;width:100%}\
-     .az-progress{width:100%;height:12px;border:1px solid #666;border-radius:6px;background:#222;overflow:hidden;display:none}\
-     .az-progress .bar{position:relative;height:100%;width:40%;background:linear-gradient(#9ec7ff,#4b90ff);animation:az-hf-indeterminate 1.2s infinite ease}\
+     .az-progress{width:100%;height:12px;border:1px solid var(--border-color,#666);border-radius:6px;background:var(--comfy-input-bg,#222);overflow:hidden;display:none}\
+     .az-progress .bar{position:relative;height:100%;width:40%;background:linear-gradient(var(--p-primary-color,#9ec7ff),var(--p-primary-color,#4b90ff));animation:az-hf-indeterminate 1.2s infinite ease}\
      @keyframes az-hf-indeterminate{0%{transform:translateX(-100%);width:40%}50%{transform:translateX(50%);width:60%}100%{transform:translateX(200%);width:40%}}";
   document.head.appendChild(style);
 }
@@ -75,8 +75,8 @@ app.registerExtension({
       repoInput.value = this.properties.repo_id || "";
       Object.assign(repoInput.style, {
         width: "100%", height: "26px", padding: "8px",
-        border: "1px solid #444", borderRadius: "6px",
-        background: "var(--comfy-input-bg, #2a2a2a)", color: "#ddd",
+        border: "1px solid var(--border-color,#444)", borderRadius: "6px",
+        background: "var(--comfy-input-bg, #2a2a2a)", color: "var(--input-text,#ddd)",
         boxSizing: "border-box", outline: "none"
       });
       const repoWidget = this.addDOMWidget("repo_id", "Repository", repoInput);
@@ -92,8 +92,8 @@ app.registerExtension({
       fileInput.value = this.properties.filename || "";
       Object.assign(fileInput.style, {
         width: "100%", height: "26px", padding: "8px",
-        border: "1px solid #444", borderRadius: "6px",
-        background: "var(--comfy-input-bg, #2a2a2a)", color: "#ddd",
+        border: "1px solid var(--border-color,#444)", borderRadius: "6px",
+        background: "var(--comfy-input-bg, #2a2a2a)", color: "var(--input-text,#ddd)",
         boxSizing: "border-box", outline: "none"
       });
       const fileWidget = this.addDOMWidget("filename", "Filename", fileInput);
@@ -112,13 +112,13 @@ app.registerExtension({
       tokenInput.value = this.properties.token || "";
       Object.assign(tokenInput.style, {
         flex: "1", height: "26px", padding: "8px",
-        border: "1px solid #444", borderRadius: "6px",
-        background: "var(--comfy-input-bg, #2a2a2a)", color: "#ddd",
+        border: "1px solid var(--border-color,#444)", borderRadius: "6px",
+        background: "var(--comfy-input-bg, #2a2a2a)", color: "var(--input-text,#ddd)",
         boxSizing: "border-box", outline: "none"
       });
 
       const tokenHint = document.createElement("span");
-      tokenHint.style.color = "#888";
+      tokenHint.style.color = "var(--descrip-text,#888)";
       tokenHint.style.fontSize = "12px";
 
       tokenRow.appendChild(tokenInput);
@@ -162,14 +162,14 @@ app.registerExtension({
       destInput.value = this.properties.dest_dir || "";
       Object.assign(destInput.style, {
         width: "100%", height: "26px", padding: "8px",
-        border: "1px solid #444", borderRadius: "6px",
-        background: "var(--comfy-input-bg, #2a2a2a)", color: "#ddd",
+        border: "1px solid var(--border-color,#444)", borderRadius: "6px",
+        background: "var(--comfy-input-bg, #2a2a2a)", color: "var(--input-text,#ddd)",
         boxSizing: "border-box", outline: "none"
       });
 
       const dropdown = document.createElement("div");
       Object.assign(dropdown.style, {
-        position: "fixed", background: "#222", border: "1px solid #555",
+        position: "fixed", background: "var(--comfy-menu-bg,#222)", border: "1px solid var(--border-color,#555)",
         display: "none", maxHeight: "200px", overflowY: "auto", fontSize: "12px",
         borderRadius: "6px", boxShadow: "0 8px 16px rgba(0,0,0,.35)",
         zIndex: "999999", minWidth: "180px"
@@ -207,7 +207,7 @@ app.registerExtension({
           row.tabIndex = -1;
           Object.assign(row.style, {
             padding: "6px 10px", cursor: "pointer", whiteSpace: "nowrap",
-            background: idx === active ? "#444" : "transparent", userSelect: "none"
+            background: idx === active ? "var(--comfy-menu-secondary-bg,#444)" : "transparent", userSelect: "none"
           });
           row.addEventListener("mousedown", (e) => {
             e.preventDefault();
@@ -383,7 +383,7 @@ app.registerExtension({
 
       // Status row (DOM text)
       const statusEl = document.createElement("div");
-      statusEl.style.color = "#ccc";
+      statusEl.style.color = "var(--descrip-text,#ccc)";
       statusEl.style.fontSize = "12px";
       statusEl.style.width = "100%";
       statusEl.style.textAlign = "center";
@@ -393,7 +393,7 @@ app.registerExtension({
 
       // Elapsed row
       const timeEl = document.createElement("div");
-      timeEl.style.color = "#999";
+      timeEl.style.color = "var(--descrip-text,#999)";
       timeEl.style.fontSize = "12px";
       timeEl.style.width = "100%";
       timeEl.style.textAlign = "center";

@@ -16,6 +16,7 @@ Feed it:
 import torch
 import torch.nn.functional as F
 import comfy.utils
+from comfy_api.latest import io
 
 
 def _gaussian_blur(mask, radius):
@@ -55,26 +56,30 @@ def _color_match(inp, orig, keep):
     return out.clamp(0, 1)
 
 
-class AzSeamlessStitch:
+class AzSeamlessStitch(io.ComfyNode):
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "original": ("IMAGE",),
-                "inpainted": ("IMAGE",),
-                "mask": ("MASK",),
-                "expand": ("INT", {"default": 0, "min": -256, "max": 256, "step": 1}),
-                "feather": ("INT", {"default": 24, "min": 0, "max": 512, "step": 1}),
-                "color_match": ("BOOLEAN", {"default": False}),
-            },
-        }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="AzSeamlessStitch",
+            display_name="Seamless Tile Stitch",
+            category="AZ_Nodes",
+            description="Blend inpainted pixels back onto the original sharp image across a feathered seam.",
+            inputs=[
+                io.Image.Input("original"),
+                io.Image.Input("inpainted"),
+                io.Mask.Input("mask"),
+                io.Int.Input("expand", default=0, min=-256, max=256, step=1),
+                io.Int.Input("feather", default=24, min=0, max=512, step=1),
+                io.Boolean.Input("color_match", default=False),
+            ],
+            outputs=[
+                io.Image.Output(display_name="image"),
+                io.Mask.Output(display_name="blend_mask"),
+            ],
+        )
 
-    RETURN_TYPES = ("IMAGE", "MASK")
-    RETURN_NAMES = ("image", "blend_mask")
-    FUNCTION = "stitch"
-    CATEGORY = "AZ_Nodes"
-
-    def stitch(self, original, inpainted, mask, expand, feather, color_match):
+    @classmethod
+    def execute(cls, original, inpainted, mask, expand, feather, color_match):
         B, H, W, C = original.shape
         device, dtype = original.device, original.dtype
 
@@ -112,4 +117,4 @@ class AzSeamlessStitch:
             inp = _color_match(inp, original, (1.0 - blend))
 
         out = inp * blend + original * (1.0 - blend)
-        return (out.clamp(0, 1), m.squeeze(1))
+        return io.NodeOutput(out.clamp(0, 1), m.squeeze(1))

@@ -1,6 +1,8 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
+// Nodes 2.0: progress + meta are DOM widgets (onDrawForeground is not called by the
+// Vue renderer), and all colors use theme CSS variables.
 function injectCSSOnce() {
   const id = "az-aria2-css";
   if (document.getElementById(id)) return;
@@ -8,10 +10,27 @@ function injectCSSOnce() {
   style.id = id;
   style.textContent =
     ".az-row{width:100%}" +
-    ".az-btn{padding:8px 14px;border:1px solid #555;border-radius:6px;background:#2f75ff;color:#fff;cursor:pointer}" +
+    ".az-btn{padding:8px 14px;border:1px solid var(--border-color,#555);border-radius:6px;" +
+      "background:var(--p-primary-color,#2f75ff);color:var(--p-button-text-primary-color,#fff);cursor:pointer}" +
     ".az-btn:disabled{opacity:.6;cursor:not-allowed}" +
-    ".az-btn-secondary{background:#333;color:#ddd}" +
-    ".az-flex{display:flex;gap:8px;align-items:center;justify-content:center;width:100%}";
+    ".az-btn-secondary{background:var(--comfy-input-bg,#333);color:var(--input-text,#ddd);border-color:var(--border-color,#555)}" +
+    ".az-flex{display:flex;gap:8px;align-items:center;justify-content:center;width:100%}" +
+    ".az-aria-input{width:100%;height:26px;padding:8px;border:1px solid var(--border-color,#444);" +
+      "border-radius:6px;background:var(--comfy-input-bg,#2a2a2a);color:var(--input-text,#ddd);box-sizing:border-box;outline:none}" +
+    ".az-aria-input:focus{border-color:var(--p-primary-color,#5b8cff)}" +
+    ".az-aria-dd{position:fixed;background:var(--comfy-menu-bg,#222);border:1px solid var(--border-color,#555);" +
+      "z-index:999999;display:none;max-height:200px;overflow-y:auto;font-size:12px;border-radius:6px;" +
+      "min-width:180px;box-shadow:0 8px 16px rgba(0,0,0,.35);color:var(--input-text,#ddd)}" +
+    ".az-aria-row{padding:6px 10px;cursor:pointer;white-space:nowrap;user-select:none}" +
+    ".az-aria-row.active{background:var(--comfy-menu-secondary-bg,var(--border-color,#444))}" +
+    ".az-aria-meta{color:var(--descrip-text,#bbb);font-size:12px;width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    ".az-aria-saved{color:var(--descrip-text,#8fa3b7);font-size:12px;width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    ".az-aria-status{color:var(--descrip-text,#ccc);font-size:12px;width:100%;text-align:center}" +
+    ".az-bar{position:relative;height:16px;border:1px solid var(--border-color,#666);border-radius:7px;" +
+      "overflow:hidden;background:var(--comfy-input-bg,#222);width:100%;box-sizing:border-box}" +
+    ".az-bar-fill{position:absolute;left:0;top:0;bottom:0;width:0%;background:var(--p-primary-color,#4b90ff);transition:width .15s ease}" +
+    ".az-bar-pct{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;" +
+      "font-size:11px;color:var(--fg-color,#eee);mix-blend-mode:difference}";
   document.head.appendChild(style);
 }
 
@@ -79,12 +98,7 @@ app.registerExtension({
       urlInput.type = "text";
       urlInput.placeholder = "URL";
       urlInput.value = this.properties.url || "";
-      Object.assign(urlInput.style, {
-        width: "100%", height: "26px", padding: "8px",
-        border: "1px solid #444", borderRadius: "6px",
-        background: "var(--comfy-input-bg, #2a2a2a)", color: "#ddd",
-        boxSizing: "border-box", outline: "none"
-      });
+      urlInput.className = "az-aria-input";
       const urlWidget = this.addDOMWidget("url", "URL", urlInput);
       urlWidget.computeSize = () => [this.size[0] - 20, rowH];
 
@@ -96,15 +110,11 @@ app.registerExtension({
       tokenInput.type = "password";
       tokenInput.placeholder = "Secret Token";
       tokenInput.value = this.properties.token || "";
-      Object.assign(tokenInput.style, {
-        flex: "1", height: "26px", padding: "8px",
-        border: "1px solid #444", borderRadius: "6px",
-        background: "var(--comfy-input-bg, #2a2a2a)", color: "#ddd",
-        boxSizing: "border-box", outline: "none"
-      });
+      tokenInput.className = "az-aria-input";
+      tokenInput.style.flex = "1";
 
       const tokenHint = document.createElement("span");
-      tokenHint.style.color = "#888";
+      tokenHint.style.color = "var(--descrip-text,#888)";
       tokenHint.style.fontSize = "12px";
 
       tokenRow.appendChild(tokenInput);
@@ -147,20 +157,10 @@ app.registerExtension({
       destInput.type = "text";
       destInput.placeholder = "Destination folder (e.g. C:/Users/you/Downloads)";
       destInput.value = this.properties.dest_dir || "";
-      Object.assign(destInput.style, {
-        width: "100%", height: "26px", padding: "8px",
-        border: "1px solid #444", borderRadius: "6px",
-        background: "var(--comfy-input-bg, #2a2a2a)", color: "#ddd",
-        boxSizing: "border-box", outline: "none"
-      });
+      destInput.className = "az-aria-input";
 
       const dropdown = document.createElement("div");
-      Object.assign(dropdown.style, {
-        position: "fixed", background: "#222", border: "1px solid #555",
-        zIndex: "999999", display: "none", maxHeight: "200px",
-        overflowY: "auto", fontSize: "12px", borderRadius: "6px",
-        minWidth: "180px", boxShadow: "0 8px 16px rgba(0,0,0,.35)"
-      });
+      dropdown.className = "az-aria-dd";
       document.body.appendChild(dropdown);
 
       const placeDropdown = () => {
@@ -185,13 +185,10 @@ app.registerExtension({
         for (let idx = 0; idx < items.length; idx++) {
           const it = items[idx];
           const row = document.createElement("div");
+          row.className = "az-aria-row" + (idx === active ? " active" : "");
           row.textContent = it.name;
           row.dataset.idx = String(idx);
           row.tabIndex = -1;
-          Object.assign(row.style, {
-            padding: "6px 10px", cursor: "pointer", whiteSpace: "nowrap",
-            background: idx === active ? "#444" : "transparent", userSelect: "none"
-          });
           row.addEventListener("mousedown", (e) => {
             e.preventDefault();
             const chosen = it.path.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
@@ -205,10 +202,8 @@ app.registerExtension({
           dropdown.appendChild(row);
         }
         placeDropdown();
-        // restore scroll, then make sure active is visible
         dropdown.style.display = "block";
         dropdown.scrollTop = prevScroll;
-        // scroll active into view (nearest) so keyboard navigation doesn't hide selection
         if (active >= 0 && dropdown.children.length > active) {
           const activeRow = dropdown.children[active];
           try {
@@ -222,7 +217,6 @@ app.registerExtension({
       };
 
       const fetchChildren = async () => {
-        // If input empty, clear
         const raw = (destInput.value || "").trim();
         if (!raw) { items = []; renderDropdown(); return; }
         const val = raw.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
@@ -240,7 +234,6 @@ app.registerExtension({
           items = [];
         }
         active = items.length ? 0 : -1;
-        // Only show dropdown if input is focused; prevents async re-open after blur
         if (document.activeElement === destInput) {
           renderDropdown();
         } else {
@@ -269,7 +262,6 @@ app.registerExtension({
         scheduleFetch();
       });
 
-      // When focusing: if field is empty, fetch server root (prefers COMFYUI_MODEL_PATH then COMFYUI_PATH on server).
       destInput.addEventListener("focus", async () => {
         placeDropdown();
         if (!destInput.value || !destInput.value.trim()) {
@@ -278,7 +270,6 @@ app.registerExtension({
             const data = await resp.json();
             if (data?.ok && data.root) {
               const root = (data.root || "").replace(/\\/g, "/");
-              // Only override if dest wasn't already set in node properties
               if (!this.properties.dest_dir) {
                 destInput.value = root;
                 this.properties.dest_dir = root;
@@ -294,7 +285,6 @@ app.registerExtension({
         scheduleFetch();
       });
 
-      // keyboard nav + ensure active is visible
       destInput.addEventListener("keydown", (e) => {
         if (dropdown.style.display !== "block" || !items.length) return;
         if (e.key === "ArrowDown") {
@@ -315,14 +305,12 @@ app.registerExtension({
         }
       });
 
-      // Hide dropdown on blur immediately and cancel pending fetches
       destInput.addEventListener("blur", () => {
         if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
         items = []; active = -1;
         dropdown.style.display = "none";
       });
 
-      // Close dropdown when clicking outside container (robust)
       const docHandler = (ev) => {
         if (!container.contains(ev.target) && !dropdown.contains(ev.target)) {
           if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
@@ -342,7 +330,7 @@ app.registerExtension({
         })
         .catch(function () { });
 
-      // Resolve token for URL automatically (old strategy; user can delete)
+      // Resolve token for URL automatically (user can delete)
       let urlDebounce = null;
       const resolveAndApplyToken = async () => {
         const url = (urlInput.value || "").trim();
@@ -397,13 +385,44 @@ app.registerExtension({
 
       // Small DOM status
       const statusEl = document.createElement("div");
-      statusEl.style.color = "#ccc";
-      statusEl.style.fontSize = "12px";
-      statusEl.style.width = "100%";
-      statusEl.style.textAlign = "center";
+      statusEl.className = "az-aria-status";
       statusEl.textContent = "Ready";
       const statusWidget = this.addDOMWidget("status", "", statusEl);
       statusWidget.computeSize = () => [this.size[0] - 20, 24];
+
+      // Meta line + saved path + progress bar (DOM; replaces onDrawForeground)
+      const metaEl = document.createElement("div");
+      metaEl.className = "az-aria-meta";
+      const metaWidget = this.addDOMWidget("meta", "", metaEl, { serialize: false });
+      metaWidget.computeSize = () => [this.size[0] - 20, 20];
+
+      const savedEl = document.createElement("div");
+      savedEl.className = "az-aria-saved";
+      const savedWidget = this.addDOMWidget("saved", "", savedEl, { serialize: false });
+      savedWidget.computeSize = () => [this.size[0] - 20, 20];
+
+      const bar = document.createElement("div");
+      bar.className = "az-bar";
+      const barFill = document.createElement("div");
+      barFill.className = "az-bar-fill";
+      const barPct = document.createElement("div");
+      barPct.className = "az-bar-pct";
+      bar.append(barFill, barPct);
+      const barWidget = this.addDOMWidget("progress", "", bar, { serialize: false });
+      barWidget.computeSize = () => [this.size[0] - 20, 22];
+
+      const renderProgress = () => {
+        metaEl.textContent = "Status: " + this._status
+          + " • Speed: " + fmtBytes(this._speed) + "/s"
+          + " • ETA: " + fmtETA(this._eta)
+          + " • Elapsed: " + fmtETA(this._elapsedSec);
+        const show = this._filepath || this._filename;
+        savedEl.style.display = show ? "block" : "none";
+        savedEl.textContent = show ? "Saved as: " + show : "";
+        const pct = Math.max(0, Math.min(100, this._progress || 0));
+        barFill.style.width = pct + "%";
+        barPct.textContent = pct.toFixed(0) + "%";
+      };
 
       const setDownloading = (on) => {
         downloadBtn.disabled = on;
@@ -426,7 +445,7 @@ app.registerExtension({
         this._filename = ""; this._filepath = "";
         this._startTS = Date.now();
         this._elapsedSec = 0;
-        this.setDirtyCanvas(true);
+        renderProgress();
         setDownloading(true);
 
         try {
@@ -445,13 +464,13 @@ app.registerExtension({
             statusEl.textContent = "Error: " + (data.error || resp.status) + extra;
             this._status = statusEl.textContent;
             setDownloading(false);
-            this.setDirtyCanvas(true);
+            renderProgress();
             return;
           }
           this.gid = data.gid;
           this._status = "Active";
           statusEl.textContent = "Active" + (data.strategy ? " (" + data.strategy + ")" : "");
-          this.setDirtyCanvas(true);
+          renderProgress();
 
           const poll = async () => {
             if (!this.gid) return;
@@ -463,7 +482,7 @@ app.registerExtension({
                 statusEl.textContent = this._status;
                 this.gid = null;
                 setDownloading(false);
-                this.setDirtyCanvas(true);
+                renderProgress();
                 return;
               }
               this._status = s.status || "active";
@@ -477,7 +496,7 @@ app.registerExtension({
                 this._elapsedSec = Math.max(0, ((Date.now() - this._startTS) / 1000) | 0);
               }
               statusEl.textContent = "Status: " + this._status;
-              this.setDirtyCanvas(true);
+              renderProgress();
 
               if (["complete", "error", "removed"].includes(this._status)) {
                 this.gid = null;
@@ -494,7 +513,7 @@ app.registerExtension({
           this._status = "Error starting download";
           statusEl.textContent = this._status;
           setDownloading(false);
-          this.setDirtyCanvas(true);
+          renderProgress();
         }
       });
 
@@ -520,61 +539,8 @@ app.registerExtension({
         }
       });
 
-      // Canvas size & drawing (progress + meta)
-      this.size = [520, 320];
-      this.onDrawForeground = (ctx) => {
-        const pad = 10;
-        const w = this.size[0] - pad * 2;
-        const barH = 14;
-        const yBar = this.size[1] - pad - barH - 4;
-        ctx.font = "12px sans-serif";
-        ctx.textAlign = "left";
-        ctx.textBaseline = "bottom";
-        ctx.fillStyle = "#bbb";
-        const meta = "Status: " + this._status
-          + " • Speed: " + fmtBytes(this._speed) + "/s"
-          + " • ETA: " + fmtETA(this._eta)
-          + " • Elapsed: " + fmtETA(this._elapsedSec);
-        ctx.fillText(meta, pad, yBar - 26);
-        if (this._filename || this._filepath) {
-          const show = this._filepath || this._filename;
-          ctx.fillStyle = "#8fa3b7";
-          ctx.fillText("Saved as: " + show, pad, yBar - 10);
-        }
-        // Progress outline
-        const radius = 7;
-        ctx.lineWidth = 1; ctx.strokeStyle = "#666";
-        ctx.beginPath();
-        ctx.moveTo(pad + radius, yBar);
-        ctx.lineTo(pad + w - radius, yBar);
-        ctx.quadraticCurveTo(pad + w, yBar, pad + w, yBar + radius);
-        ctx.lineTo(pad + w, yBar + barH - radius);
-        ctx.quadraticCurveTo(pad + w, yBar + barH, pad + w - radius, yBar + barH);
-        ctx.lineTo(pad + radius, yBar + barH);
-        ctx.quadraticCurveTo(pad, yBar + barH, pad, yBar + barH - radius);
-        ctx.lineTo(pad, yBar + radius);
-        ctx.quadraticCurveTo(pad, yBar, pad + radius, yBar);
-        ctx.closePath();
-        ctx.stroke();
-        // Fill bar
-        const pct = Math.max(0, Math.min(100, this._progress || 0));
-        const fillW = Math.round((w * pct) / 100);
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(pad + 1, yBar + 1, Math.max(0, fillW - 2), barH - 2);
-        const grad = ctx.createLinearGradient(pad, yBar, pad, yBar + barH);
-        grad.addColorStop(0, "#9ec7ff");
-        grad.addColorStop(1, "#4b90ff");
-        ctx.fillStyle = grad;
-        ctx.fill();
-        ctx.restore();
-        // Percentage text
-        ctx.font = "12px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillStyle = "#111";
-        ctx.fillText(pct.toFixed(0) + "%", pad + w / 2, yBar + barH / 2);
-      };
+      this.size = [520, 360];
+      renderProgress();
 
       // Reposition dropdown on scroll/resize
       const onScroll = () => { placeDropdown(); };
@@ -593,19 +559,16 @@ app.registerExtension({
         if (oldRemoved) oldRemoved.apply(this, arguments);
       };
 
-      // Prefill the destInput with the server's working directory (ComfyUI installation/run folder)
-      // The server's /az/listdir with no path returns root = os.path.abspath(os.getcwd()).
+      // Prefill the destInput with the server's working directory.
       (async ()=>{
         try {
           const resp = await api.fetchApi(`/az/listdir`);
           const data = await resp.json();
           if (data?.ok && data.root) {
             const root = (data.root || "").replace(/\\/g, "/");
-            // Only override if dest wasn't already set in node properties
             if (!this.properties.dest_dir) {
               destInput.value = root;
               this.properties.dest_dir = root;
-              // prefetch children for snappy keyboard navigation; do NOT render dropdown unless focused
               if (debounceTimer) clearTimeout(debounceTimer);
               debounceTimer = setTimeout(fetchChildren, 50);
             }

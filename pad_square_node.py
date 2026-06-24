@@ -16,6 +16,7 @@ Replaces Resize Image v2 + Color To Mask + Combine Masks + Grow Mask With Blur.
 import torch
 import torch.nn.functional as F
 import comfy.utils
+from comfy_api.latest import io
 
 
 def _parse_color(s, default=(0, 0, 0)):
@@ -62,41 +63,48 @@ def _fill_holes(mask):
     return t.unsqueeze(1)
 
 
-class AzPadSquareForInpaint:
+class AzPadSquareForInpaint(io.ComfyNode):
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "image": ("IMAGE",),
-                "width": ("INT", {"default": 1024, "min": 16, "max": 8192, "step": 8}),
-                "height": ("INT", {"default": 1024, "min": 16, "max": 8192, "step": 8}),
-                "upscale_method": (
-                    ["lanczos", "bicubic", "bilinear", "area", "nearest-exact"],
-                    {"default": "lanczos"},
+    def define_schema(cls):
+        return io.Schema(
+            node_id="AzPadSquareForInpaint",
+            display_name="Pad to Square (Inpaint)",
+            category="AZ_Nodes",
+            description="Fit + pad an image to a target box and emit a combined inpaint mask (pad border + painted area).",
+            inputs=[
+                io.Image.Input("image"),
+                io.Int.Input("width", default=1024, min=16, max=8192, step=8),
+                io.Int.Input("height", default=1024, min=16, max=8192, step=8),
+                io.Combo.Input(
+                    "upscale_method",
+                    options=["lanczos", "bicubic", "bilinear", "area", "nearest-exact"],
+                    default="lanczos",
                 ),
-                "pad_mode": (["edge", "color"], {"default": "edge"}),
-                "pad_color": ("STRING", {"default": "0,0,0"}),
-                "crop_position": (
-                    ["center", "top", "bottom", "left", "right"],
-                    {"default": "center"},
+                io.Combo.Input("pad_mode", options=["edge", "color"], default="edge"),
+                io.String.Input("pad_color", default="0,0,0"),
+                io.Combo.Input(
+                    "crop_position",
+                    options=["center", "top", "bottom", "left", "right"],
+                    default="center",
                 ),
-                "divisible_by": ("INT", {"default": 16, "min": 1, "max": 256, "step": 1}),
-                "painted_level": ("FLOAT", {"default": 0.7, "min": 0.0, "max": 1.0, "step": 0.05}),
-                "mask_grow": ("INT", {"default": 0, "min": 0, "max": 256, "step": 1}),
-                "mask_blur": ("INT", {"default": 0, "min": 0, "max": 256, "step": 1}),
-                "fill_holes": ("BOOLEAN", {"default": False}),
-            },
-            "optional": {
-                "mask": ("MASK",),
-            },
-        }
+                io.Int.Input("divisible_by", default=16, min=1, max=256, step=1),
+                io.Float.Input("painted_level", default=0.7, min=0.0, max=1.0, step=0.05),
+                io.Int.Input("mask_grow", default=0, min=0, max=256, step=1),
+                io.Int.Input("mask_blur", default=0, min=0, max=256, step=1),
+                io.Boolean.Input("fill_holes", default=False),
+                io.Mask.Input("mask", optional=True),
+            ],
+            outputs=[
+                io.Image.Output(display_name="image"),
+                io.Mask.Output(display_name="mask"),
+                io.Mask.Output(display_name="mask_full"),
+                io.Int.Output(display_name="width"),
+                io.Int.Output(display_name="height"),
+            ],
+        )
 
-    RETURN_TYPES = ("IMAGE", "MASK", "MASK", "INT", "INT")
-    RETURN_NAMES = ("image", "mask", "mask_full", "width", "height")
-    FUNCTION = "process"
-    CATEGORY = "AZ_Nodes"
-
-    def process(self, image, width, height, upscale_method, pad_mode, pad_color,
+    @classmethod
+    def execute(cls, image, width, height, upscale_method, pad_mode, pad_color,
                 crop_position, divisible_by, painted_level, mask_grow, mask_blur,
                 fill_holes, mask=None):
         B, H, W, C = image.shape
@@ -181,4 +189,4 @@ class AzPadSquareForInpaint:
                 mm = torch.maximum(blurred, core)
             return mm.squeeze(1).clamp(0, 1)
 
-        return (canvas, _finish(inside_lvl), _finish(inside_full), width, height)
+        return io.NodeOutput(canvas, _finish(inside_lvl), _finish(inside_full), width, height)

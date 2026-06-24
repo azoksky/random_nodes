@@ -16,24 +16,24 @@ function injectCSSOnce() {
       box-sizing:border-box;
       font-family:var(--font-family,'Segoe UI',sans-serif)}
     .az-iter-label{font-size:10px;line-height:${LABEL_H}px;letter-spacing:.07em;
-      text-transform:uppercase;color:#7e8696;padding-left:1px}
-    .az-iter-input{width:100%;height:${ROW_H}px;padding:0 9px;border:1px solid #3a3f4b;
-      border-radius:7px;background:#1d2027;color:#e8ebf1;box-sizing:border-box;
+      text-transform:uppercase;color:var(--descrip-text,#7e8696);padding-left:1px}
+    .az-iter-input{width:100%;height:${ROW_H}px;padding:0 9px;border:1px solid var(--border-color,#3a3f4b);
+      border-radius:7px;background:var(--comfy-input-bg,#1d2027);color:var(--input-text,#e8ebf1);box-sizing:border-box;
       outline:none;font-size:13px;
       transition:border-color .15s ease, box-shadow .15s ease}
-    .az-iter-input::placeholder{color:#5d6473}
-    .az-iter-input:focus{border-color:#5b8cff;box-shadow:0 0 0 2px rgba(91,140,255,.22)}
+    .az-iter-input::placeholder{color:var(--descrip-text,#5d6473)}
+    .az-iter-input:focus{border-color:var(--p-primary-color,#5b8cff);box-shadow:0 0 0 2px rgba(91,140,255,.22)}
     .az-iter-preview{display:flex;align-items:center;gap:8px;height:${ROW_H}px;
       padding:0 9px;border-radius:7px;box-sizing:border-box;
       background:rgba(91,140,255,.08);border:1px solid rgba(91,140,255,.26)}
-    .az-iter-dot{width:7px;height:7px;border-radius:50%;background:#5b8cff;
-      box-shadow:0 0 7px #5b8cff;flex:0 0 auto}
+    .az-iter-dot{width:7px;height:7px;border-radius:50%;background:var(--p-primary-color,#5b8cff);
+      box-shadow:0 0 7px var(--p-primary-color,#5b8cff);flex:0 0 auto}
     .az-iter-dot.live{background:#46d39a;box-shadow:0 0 7px #46d39a}
     .az-iter-text{flex:1 1 auto;font-family:ui-monospace,Menlo,Consolas,monospace;
-      font-size:12px;color:#cdd6f4;white-space:nowrap;overflow:hidden;
+      font-size:12px;color:var(--input-text,#cdd6f4);white-space:nowrap;overflow:hidden;
       text-overflow:ellipsis}
     .az-iter-badge{flex:0 0 auto;font-size:9px;letter-spacing:.05em;
-      text-transform:uppercase;color:#8a93a6;background:rgba(255,255,255,.05);
+      text-transform:uppercase;color:var(--descrip-text,#8a93a6);background:rgba(255,255,255,.05);
       padding:1px 6px;border-radius:5px}
   `;
   document.head.appendChild(s);

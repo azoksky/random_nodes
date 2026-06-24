@@ -1,6 +1,6 @@
+from comfy_api.latest import ComfyExtension, io
 
-#from .generate_clip_prompt_node import GenerateCLIPPromptNode
-from .extra_node import AzInput, OverrideCLIPDevice, FluxResolutionNode, GetImageSizeRatio, OverrideVAEDevice, OverrideMODELDevice,PurgeVRAM, PurgeVRAM_V2, AnyType
+from .flux_resolution_node import FluxResolutionNode
 from .path_uploader import PathUploader
 from .Downloader_helper import Aria2Downloader
 from .hf_hub_downloader import hf_hub_downloader
@@ -15,54 +15,29 @@ from .krea2_rebalance_node import AzKrea2ProjectorRebalance
 from .krea2_gated_rebalance_node import AzKrea2GatedRebalance
 
 
-NODE_CLASS_MAPPINGS = {
-    #"GenerateCLIPPromptNode": GenerateCLIPPromptNode,
-    "Aria2Downloader": Aria2Downloader,
-    "AzInput": AzInput,
-    "OverrideCLIPDevice": OverrideCLIPDevice,
-    "OverrideVAEDevice": OverrideVAEDevice,
-    "OverrideMODELDevice": OverrideMODELDevice,
-    "FluxResolutionNode": FluxResolutionNode,
-    "GetImageSizeRatio": GetImageSizeRatio,
-    "PurgeVRAM_V1": PurgeVRAM,
-    "PurgeVRAM_V2": PurgeVRAM_V2,
-    "PathUploader": PathUploader,
-    "hf_hub_downloader":hf_hub_downloader,
-    "hf_list_downloader": HFListDownloader,
-    "hf_list_aria2": HFListAria2Downloader,
-    "WanFirstGuidingFrameToVideo": WanFirstGuidingFrameToVideo,
-    "AzIterativeString": AzIterativeString,
-    "AzPadSquareForInpaint": AzPadSquareForInpaint,
-    "AzSeamlessStitch": AzSeamlessStitch,
-    "AzDetailerInpaint": AzInpaintCropStitch,
-    "AzKrea2ProjectorRebalance": AzKrea2ProjectorRebalance,
-    "AzKrea2GatedRebalance": AzKrea2GatedRebalance,
-}
+class RandomNodesExtension(ComfyExtension):
+    async def get_node_list(self) -> list[type[io.ComfyNode]]:
+        return [
+            FluxResolutionNode,
+            PathUploader,
+            Aria2Downloader,
+            hf_hub_downloader,
+            HFListDownloader,
+            HFListAria2Downloader,
+            WanFirstGuidingFrameToVideo,
+            AzIterativeString,
+            AzPadSquareForInpaint,
+            AzSeamlessStitch,
+            AzInpaintCropStitch,
+            AzKrea2ProjectorRebalance,
+            AzKrea2GatedRebalance,
+        ]
 
-NODE_DISPLAY_NAME_MAPPINGS = {
-    # "GenerateCLIPPromptNode": "Generate CLIP Prompt",
-    "Aria2Downloader": "Aria2 Downloader",
-    "AzInput": "Input String",
-    "OverrideCLIPDevice": "Force/Set CLIP Device",
-    "OverrideVAEDevice": "Force/Set VAE Device",
-    "OverrideMODELDevice": "Force/Set MODEL Device",
-    "FluxResolutionNode": "Flux Resolution Calc",
-    "GetImageSizeRatio": "Get Image Size Ratio",
-    "PurgeVRAM": "Purge VRAM V1",
-    "PurgeVRAM_V2": "Purge VRAM V2",
-    "PathUploader": "Path Uploader",
-    "hf_hub_downloader":"HF Downloader",
-    "hf_list_downloader": "HF List Downloader",
-    "hf_list_aria2": "HF List Downloader (aria2)",
-    "WanFirstGuidingFrameToVideo": "Wan First Guiding Frame To Video",
-    "AzIterativeString": "Iterative String",
-    "AzPadSquareForInpaint": "Pad Square For Inpaint",
-    "AzSeamlessStitch": "Seamless Stitch",
-    "AzDetailerInpaint": "Inpaint (Crop & Stitch)",
-    "AzKrea2ProjectorRebalance": "Krea2 Text-Fusion Rebalance (Projector)",
-    "AzKrea2GatedRebalance": "Krea2 Gated Rebalance (all-in-one)",
-}
+
+async def comfy_entrypoint() -> ComfyExtension:
+    return RandomNodesExtension()
+
 
 WEB_DIRECTORY = "./js"
 
-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
+__all__ = ["comfy_entrypoint", "WEB_DIRECTORY"]

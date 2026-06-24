@@ -1,5 +1,7 @@
 // Path Uploader UI: live dropdown under the path box, mouse + keyboard selection,
 // upload progress, and automatic "\" -> "/" normalization.
+// Nodes 2.0: status + progress are DOM widgets (onDrawForeground is not called by
+// the Vue renderer), and all colors use theme CSS variables.
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
@@ -18,6 +20,35 @@ function joinPath(base, seg) {
 function fmtBytes(b){ if(!b||b<=0) return "0 B"; const u=["B","KB","MB","GB","TB"]; const i=Math.floor(Math.log(b)/Math.log(1024)); return (b/Math.pow(1024,i)).toFixed(i?1:0)+" "+u[i]; }
 function fmtETA(s){ if(s==null) return "—"; const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=Math.floor(s%60); if(h) return `${h}h ${m}m ${sec}s`; if(m) return `${m}m ${sec}s`; return `${sec}s`; }
 
+function injectCSSOnce(){
+  const id = "az-path-uploader-css";
+  if (document.getElementById(id)) return;
+  const s = document.createElement("style");
+  s.id = id;
+  s.textContent = `
+    .az-up-input{width:100%;height:26px;padding:2px 8px;border:1px solid var(--border-color,#444);
+      border-radius:6px;background:var(--comfy-input-bg,#2a2a2a);color:var(--input-text,#ddd);
+      box-sizing:border-box;outline:none}
+    .az-up-input:focus{border-color:var(--p-primary-color,#5b8cff)}
+    .az-up-dropdown{position:absolute;top:100%;left:0;right:0;background:var(--comfy-menu-bg,#222);
+      border:1px solid var(--border-color,#555);z-index:9999;display:none;max-height:180px;
+      overflow-y:auto;font-size:12px;border-radius:6px;color:var(--input-text,#ddd)}
+    .az-up-row{padding:5px 8px;cursor:pointer;white-space:nowrap;user-select:none}
+    .az-up-row.active{background:var(--comfy-menu-secondary-bg,var(--border-color,#444))}
+    .az-up-panel{display:flex;flex-direction:column;gap:4px;width:100%;box-sizing:border-box;
+      font-family:var(--font-family,'Segoe UI',sans-serif);font-size:12px;padding:2px 2px 4px}
+    .az-up-saved{color:var(--p-green-400,#9bc27c);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .az-up-file,.az-up-meta{color:var(--descrip-text,#9aa3b2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .az-up-bar{position:relative;height:16px;border:1px solid var(--border-color,#666);border-radius:7px;
+      overflow:hidden;background:var(--comfy-input-bg,#222)}
+    .az-up-fill{position:absolute;left:0;top:0;bottom:0;width:0%;
+      background:var(--p-primary-color,#4b90ff);transition:width .15s ease}
+    .az-up-pct{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+      font-size:11px;color:var(--fg-color,#eee);mix-blend-mode:difference}
+  `;
+  document.head.appendChild(s);
+}
+
 app.registerExtension({
   name: "az.path.uploader",
   beforeRegisterNodeDef(nodeType, nodeData) {
@@ -26,6 +57,7 @@ app.registerExtension({
     const orig = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
       const r = orig ? orig.apply(this, arguments) : undefined;
+      injectCSSOnce();
 
       // ---- persistent + state ----
       this.properties = this.properties || {};
@@ -42,23 +74,13 @@ app.registerExtension({
 
       const destInput = document.createElement("input");
       destInput.type="text";
+      destInput.className="az-up-input";
       destInput.placeholder="Destination folder (e.g. C:/Users/you/Downloads or ~/models)";
-      Object.assign(destInput.style,{
-        width:"100%", height:"26px", padding:"2px 8px",
-        border:"1px solid #444", borderRadius:"6px",
-        background:"var(--comfy-input-bg, #2a2a2a)", color:"#ddd",
-        boxSizing:"border-box", outline:"none"
-      });
       destInput.value = this.properties.dest_dir;
 
       // dropdown panel anchored under the input
       const dropdown = document.createElement("div");
-      Object.assign(dropdown.style,{
-        position:"absolute", top:"100%", left:"0", right:"0",
-        background:"#222", border:"1px solid #555",
-        zIndex:"9999", display:"none", maxHeight:"180px",
-        overflowY:"auto", fontSize:"12px", borderRadius:"6px"
-      });
+      dropdown.className="az-up-dropdown";
 
       container.appendChild(destInput);
       container.appendChild(dropdown);
@@ -75,14 +97,10 @@ app.registerExtension({
 
         items.forEach((it, idx)=>{
           const row = document.createElement("div");
+          row.className = "az-up-row" + (idx===active ? " active" : "");
           row.textContent = it.name;
           row.dataset.idx = String(idx);
           row.tabIndex = -1; // make focusable if needed
-          Object.assign(row.style,{
-            padding:"5px 8px", cursor:"pointer", whiteSpace:"nowrap",
-            background: idx===active ? "#444" : "transparent",
-            userSelect: "none"
-          });
 
           // Highlight on hover
           row.onmouseenter = ()=>{ active = idx; renderDropdown(); };
@@ -106,11 +124,9 @@ app.registerExtension({
         if (active >= 0 && dropdown.children.length > active) {
           const activeRow = dropdown.children[active];
           try {
-            // block: "nearest" avoids large jumps; smooth is optional and can be removed
             if (typeof activeRow.scrollIntoView === "function") {
               activeRow.scrollIntoView({ block: "nearest" });
             } else {
-              // fallback: adjust scrollTop
               const rowTop = activeRow.offsetTop;
               const rowBottom = rowTop + activeRow.offsetHeight;
               if (rowTop < dropdown.scrollTop) dropdown.scrollTop = rowTop;
@@ -160,10 +176,8 @@ app.registerExtension({
       // allow keyboard to open/populate the dropdown when Arrow keys are pressed,
       // and let Enter choose the active item even if dropdown wasn't open.
       destInput.addEventListener("keydown", async (e)=>{
-        // If user navigates while suggestions not yet loaded, fetch them immediately
         if ((e.key === "ArrowDown" || e.key === "ArrowUp") && dropdown.style.display !== "block") {
           e.preventDefault();
-          // fetchChildren will show dropdown only if input is focused (it is)
           if (debounceTimer) clearTimeout(debounceTimer);
           await fetchChildren();
         }
@@ -202,7 +216,6 @@ app.registerExtension({
         const normalized = normalizePath(before);
         if (normalized !== before) {
           destInput.value = normalized;
-          // best-effort caret restore (compute delta vs original string)
           const delta = normalized.length - before.length;
           const pos = Math.max(0, (prevStart||0) + (delta||0));
           destInput.setSelectionRange(pos, pos);
@@ -211,29 +224,26 @@ app.registerExtension({
         scheduleFetch();
       });
 
-      // When focusing: if field is empty, fetch server root (prefers COMFYUI_MODEL_PATH then COMFYUI_PATH on server).
+      // When focusing: if field is empty, fetch server root and prefill before fetchChildren.
       destInput.addEventListener("focus", async ()=>{
-        // If box is empty, fetch server root and prefill before kicking off fetchChildren
         if (!destInput.value || !destInput.value.trim()) {
           try {
             const resp = await api.fetchApi(`/az/listdir`);
             const data = await resp.json();
             if (data?.ok && data.root) {
               const root = normalizePath(data.root);
-              // Only override if dest wasn't already set in node properties
               if (!this.properties.dest_dir) {
                 destInput.value = root;
                 this.properties.dest_dir = root;
                 if (debounceTimer) clearTimeout(debounceTimer);
                 debounceTimer = setTimeout(fetchChildren, 50);
-                return; // fetchChildren scheduled; don't call scheduleFetch below twice
+                return;
               }
             }
           } catch (e) {
             // ignore
           }
         }
-        // Default: schedule normal child fetch (unchanged behavior)
         scheduleFetch();
       });
 
@@ -254,6 +264,31 @@ app.registerExtension({
       };
       document.addEventListener("pointerdown", docHandler);
 
+      // ===== Status + progress (DOM widget; replaces onDrawForeground) =====
+      const panel = document.createElement("div");
+      panel.className = "az-up-panel";
+      const savedEl = document.createElement("div"); savedEl.className = "az-up-saved";
+      const fileEl  = document.createElement("div"); fileEl.className  = "az-up-file";
+      const metaEl  = document.createElement("div"); metaEl.className  = "az-up-meta";
+      const barWrap = document.createElement("div"); barWrap.className = "az-up-bar";
+      const barFill = document.createElement("div"); barFill.className = "az-up-fill";
+      const barPct  = document.createElement("div"); barPct.className  = "az-up-pct";
+      barWrap.append(barFill, barPct);
+      panel.append(savedEl, fileEl, metaEl, barWrap);
+      const panelWidget = this.addDOMWidget("upload_status", "", panel, { serialize: false });
+      panelWidget.computeSize = (width) => [width, 78];
+
+      const render = () => {
+        savedEl.style.display = this._savedPath ? "block" : "none";
+        savedEl.textContent = this._savedPath ? `Saved: ${this._savedPath}` : "";
+        fileEl.style.display = this._filename ? "block" : "none";
+        fileEl.textContent = this._filename ? `File: ${this._filename} (${fmtBytes(this._total)})` : "";
+        metaEl.textContent = `Status: ${this._status}   •   Speed: ${fmtBytes(this._speed)}/s   •   ETA: ${fmtETA(this._eta)}`;
+        const pct = Math.max(0, Math.min(100, this._progress || 0));
+        barFill.style.width = pct + "%";
+        barPct.textContent = pct.toFixed(0) + "%";
+      };
+
       // ===== File picker =====
       this.addWidget("button","Choose File","Browse…",()=>{
         const picker=document.createElement("input"); picker.type="file";
@@ -261,32 +296,31 @@ app.registerExtension({
           if(!picker.files||!picker.files[0]) return;
           const f=picker.files[0]; this._selectedFile=f; this._filename=f.name; this._total=f.size;
           this._sent=0; this._progress=0; this._status="Ready"; this._savedPath="";
-          this.setDirtyCanvas(true);
+          render();
         };
         picker.click();
       });
 
       // ===== Upload =====
       this.addWidget("button","Upload","Start",async ()=>{
-        if(!this._selectedFile){ this._status="Please select a file first."; this.setDirtyCanvas(true); return; }
+        if(!this._selectedFile){ this._status="Please select a file first."; render(); return; }
         const dest=normalizePath(this.properties.dest_dir||"").trim();
-        if(!dest){ this._status="Please enter destination folder."; this.setDirtyCanvas(true); return; }
+        if(!dest){ this._status="Please enter destination folder."; render(); return; }
         if(this._xhr) return;
 
         const form=new FormData();
-        // Append dest_dir first (defensive; some servers buffer until text parts consumed)
         form.append("dest_dir", dest);
         form.append("file", this._selectedFile, this._selectedFile.name);
 
         const xhr=new XMLHttpRequest(); this._xhr=xhr;
         this._status="Uploading…"; this._progress=0; this._sent=0; this._speed=0; this._eta=null; this._savedPath="";
-        this._tPrev=performance.now(); this._sentPrev=0; this.setDirtyCanvas(true);
+        this._tPrev=performance.now(); this._sentPrev=0; render();
 
         xhr.upload.onprogress=(e)=>{
           if(e.lengthComputable){ this._sent=e.loaded; this._total=e.total; this._progress=Math.max(0,Math.min(100,(e.loaded/e.total)*100)); }
           const tNow=performance.now(), dt=(tNow-this._tPrev)/1000;
           if(dt>0.25){ const dBytes=this._sent-this._sentPrev; this._speed=dBytes/dt; const remain=Math.max(this._total-this._sent,0); this._eta=this._speed>0?Math.floor(remain/this._speed):null; this._tPrev=tNow; this._sentPrev=this._sent; }
-          this.setDirtyCanvas(true);
+          render();
         };
 
         xhr.onreadystatechange=()=>{
@@ -294,69 +328,35 @@ app.registerExtension({
             let data=null; try{ data=JSON.parse(xhr.responseText||"{}"); }catch{}
             if(xhr.status>=200 && xhr.status<300 && data?.ok){ this._status="Complete"; this._savedPath=data.path||""; this._progress=100; }
             else{ const err=(data&&(data.error||data.message))||`HTTP ${xhr.status}`; this._status=`Error: ${err}`; }
-            this._xhr=null; this.setDirtyCanvas(true);
+            this._xhr=null; render();
           }
         };
-        xhr.onerror=()=>{ this._status="Network error"; this._xhr=null; this.setDirtyCanvas(true); };
+        xhr.onerror=()=>{ this._status="Network error"; this._xhr=null; render(); };
 
         // Use the ComfyUI api base (e.g. "/console") so the POST lands on the same
-        // backend as api.fetchApi calls. A raw "/az/upload" ignores the base and gets
-        // routed to the wrong upstream (and a 1 MB nginx default -> 413) when ComfyUI
-        // is served under a sub-path via reverse proxy.
+        // backend as api.fetchApi calls.
         const uploadURL = (api.apiURL ? api.apiURL("/az/upload") : "/az/upload");
         xhr.open("POST", uploadURL, true); xhr.send(form);
       });
 
       // ===== Cancel =====
       this.addWidget("button","Cancel","Stop",()=>{
-        if(this._xhr){ this._xhr.abort(); this._xhr=null; this._status="Canceled"; this.setDirtyCanvas(true); }
+        if(this._xhr){ this._xhr.abort(); this._xhr=null; this._status="Canceled"; render(); }
       });
 
-      // ===== layout & drawing =====
-      this.size=[520,290];
-      this.onDrawForeground=(ctx)=>{
-        const pad=10,w=this.size[0]-pad*2,barH=14,yBar=this.size[1]-pad-barH-4;
+      this.size=[520,300];
+      render();
 
-        if(this._savedPath){ ctx.font="12px sans-serif"; ctx.textAlign="left"; ctx.textBaseline="bottom"; ctx.fillStyle="#9bc27c";
-          ctx.fillText(`Saved: ${this._savedPath}`, pad, yBar-48); }
-
-        if(this._filename){ ctx.font="12px sans-serif"; ctx.textAlign="left"; ctx.textBaseline="bottom"; ctx.fillStyle="#8fa3b7";
-          ctx.fillText(`File: ${this._filename} (${fmtBytes(this._total)})`, pad, yBar-32); }
-
-        ctx.font="12px sans-serif"; ctx.textAlign="left"; ctx.textBaseline="bottom"; ctx.fillStyle="#bbb";
-        const meta=`Status: ${this._status}   •   Speed: ${fmtBytes(this._speed)}/s   •   ETA: ${fmtETA(this._eta)}`;
-        ctx.fillText(meta, pad, yBar-16);
-
-        const radius=7; ctx.lineWidth=1; ctx.strokeStyle="#666";
-        ctx.beginPath();
-        ctx.moveTo(pad+radius,yBar); ctx.lineTo(pad+w-radius,yBar);
-        ctx.quadraticCurveTo(pad+w,yBar,pad+w,yBar+radius);
-        ctx.lineTo(pad+w,yBar+barH-radius); ctx.quadraticCurveTo(pad+w,yBar+barH,pad+w-radius,yBar+barH);
-        ctx.lineTo(pad+radius,yBar+barH); ctx.quadraticCurveTo(pad,yBar+barH,pad,yBar+barH-radius);
-        ctx.lineTo(pad,yBar+radius); ctx.quadraticCurveTo(pad,yBar,pad+radius,yBar); ctx.closePath(); ctx.stroke();
-
-        const pct=Math.max(0,Math.min(100,this._progress||0)); const fillW=Math.round((w*pct)/100);
-        ctx.save(); ctx.beginPath(); ctx.rect(pad+1,yBar+1,Math.max(0,fillW-2),barH-2);
-        const g=ctx.createLinearGradient(pad,yBar,pad,yBar+barH); g.addColorStop(0,"#9ec7ff"); g.addColorStop(1,"#4b90ff");
-        ctx.fillStyle=g; ctx.fill(); ctx.restore();
-
-        ctx.font="12px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillStyle="#111";
-        ctx.fillText(`${pct.toFixed(0)}%`, pad+w/2, yBar+barH/2);
-      };
-
-      // Prefill the destInput with the server's working directory (ComfyUI installation/run folder)
-      // The server's /az/listdir with no path returns root = os.path.abspath(os.getcwd()) or env override.
+      // Prefill the destInput with the server's working directory.
       (async ()=>{
         try {
           const resp = await api.fetchApi(`/az/listdir`);
           const data = await resp.json();
           if (data?.ok && data.root) {
             const root = normalizePath(data.root);
-            // Only override if dest wasn't already set in node properties
             if (!this.properties.dest_dir) {
               destInput.value = root;
               this.properties.dest_dir = root;
-              // populate children for keyboard navigation & dropdown only when needed
               if (debounceTimer) clearTimeout(debounceTimer);
               debounceTimer = setTimeout(fetchChildren, 50);
             }

@@ -16,6 +16,7 @@ Feed clean `CLIP Text Encode` -> this node -> KSampler positive. That's it.
 
 import torch
 import node_helpers
+from comfy_api.latest import io
 
 N_LAYERS = 12
 
@@ -36,43 +37,44 @@ def _scale_conditioning(conditioning, gains, multiplier):
     return out
 
 
-class AzKrea2GatedRebalance:
+class AzKrea2GatedRebalance(io.ComfyNode):
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "conditioning": ("CONDITIONING", {"tooltip": "Clean prompt conditioning (CLIP Text Encode, krea2)."}),
-                "per_layer_weights": ("STRING", {
-                    "default": "1,1,1,1,1,1,1,1,2.5,5,1,4",
-                    "multiline": False,
-                    "tooltip": "12 per-layer multipliers (layer 0..11). 1=unchanged. "
-                               "Boost the NSFW-carrying layers (~8/9/11).",
-                }),
-                "multiplier": ("FLOAT", {
-                    "default": 1.0, "min": 0.0, "max": 10.0, "step": 0.05,
-                    "tooltip": "Global scale on the rebalanced (early) cond.",
-                }),
-                "crossover": ("FLOAT", {
-                    "default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01,
-                    "tooltip": "Switch point. Higher = hold NSFW cond longer (stronger content); "
-                               "lower = more clean steps (less plasticky).",
-                }),
-            },
-            "optional": {
-                "overlap": ("FLOAT", {
-                    "default": 0.0, "min": 0.0, "max": 0.5, "step": 0.01,
-                    "tooltip": "Soften the seam: both conds active +/- this around crossover. 0 = hard switch.",
-                }),
-            },
-        }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="AzKrea2GatedRebalance",
+            display_name="Krea2 Gated Rebalance",
+            category="AZ_Nodes",
+            description="All-in-one: rebalance the 12-layer cond, gate it to early steps, clean cond late (anti-plasticky).",
+            inputs=[
+                io.Conditioning.Input("conditioning", tooltip="Clean prompt conditioning (CLIP Text Encode, krea2)."),
+                io.String.Input(
+                    "per_layer_weights",
+                    default="1,1,1,1,1,1,1,1,2.5,5,1,4",
+                    multiline=False,
+                    tooltip="12 per-layer multipliers (layer 0..11). 1=unchanged. "
+                            "Boost the NSFW-carrying layers (~8/9/11).",
+                ),
+                io.Float.Input(
+                    "multiplier", default=1.0, min=0.0, max=10.0, step=0.05,
+                    tooltip="Global scale on the rebalanced (early) cond.",
+                ),
+                io.Float.Input(
+                    "crossover", default=0.5, min=0.0, max=1.0, step=0.01,
+                    tooltip="Switch point. Higher = hold NSFW cond longer (stronger content); "
+                            "lower = more clean steps (less plasticky).",
+                ),
+                io.Float.Input(
+                    "overlap", default=0.0, min=0.0, max=0.5, step=0.01, optional=True,
+                    tooltip="Soften the seam: both conds active +/- this around crossover. 0 = hard switch.",
+                ),
+            ],
+            outputs=[
+                io.Conditioning.Output(display_name="conditioning"),
+            ],
+        )
 
-    RETURN_TYPES = ("CONDITIONING",)
-    RETURN_NAMES = ("conditioning",)
-    FUNCTION = "apply"
-    CATEGORY = "AZ_Nodes"
-    DESCRIPTION = "All-in-one: rebalance the 12-layer cond, gate it to early steps, clean cond late (anti-plasticky)."
-
-    def apply(self, conditioning, per_layer_weights, multiplier, crossover, overlap=0.0):
+    @classmethod
+    def execute(cls, conditioning, per_layer_weights, multiplier, crossover, overlap=0.0):
         vals = [v for v in (w.strip() for w in per_layer_weights.split(",")) if v != ""]
         if len(vals) != N_LAYERS:
             raise ValueError(f"'per_layer_weights' must have {N_LAYERS} numbers, got {len(vals)}")
@@ -89,8 +91,4 @@ class AzKrea2GatedRebalance:
             rebalanced, {"start_percent": 0.0, "end_percent": early_end})
         late = node_helpers.conditioning_set_values(
             conditioning, {"start_percent": late_start, "end_percent": 1.0})
-        return (early + late,)
-
-
-NODE_CLASS_MAPPINGS = {"AzKrea2GatedRebalance": AzKrea2GatedRebalance}
-NODE_DISPLAY_NAME_MAPPINGS = {"AzKrea2GatedRebalance": "Krea2 Gated Rebalance (all-in-one)"}
+        return io.NodeOutput(early + late)

@@ -225,14 +225,21 @@ async def hf_aria2_cancel(request):
     return web.json_response({"ok": True})
 
 
-class HFListAria2Downloader:
+from comfy_api.latest import io
+
+
+class HFListAria2Downloader(io.ComfyNode):
     @classmethod
-    def INPUT_TYPES(cls):
-        return {"required": {}}  # UI-only
+    def define_schema(cls):
+        return io.Schema(
+            node_id="hf_list_aria2",
+            display_name="HuggingFace Batch Downloader (aria2)",
+            category="AZ_Nodes",
+            description="UI-only: queue and download a list of HF files via aria2 (widgets are in JS).",
+            inputs=[],
+            outputs=[],
+        )
 
-    RETURN_TYPES = ()
-    FUNCTION = "noop"
-    CATEGORY = "AZ_Nodes"
-
-    def noop(self):
-        return ()
+    @classmethod
+    def execute(cls):
+        return io.NodeOutput()

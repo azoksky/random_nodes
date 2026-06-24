@@ -136,14 +136,21 @@ async def token_suffix(request: web.Request):
 
 
 # ============ UI node shell (no-op compute) ============
-class hf_hub_downloader:
+from comfy_api.latest import io
+
+
+class hf_hub_downloader(io.ComfyNode):
     @classmethod
-    def INPUT_TYPES(cls):
-        return {"required": {}}
+    def define_schema(cls):
+        return io.Schema(
+            node_id="hf_hub_downloader",
+            display_name="HuggingFace File Downloader",
+            category="AZ_Nodes",
+            description="UI-only: download a single file from a HF repo (widgets are in JS).",
+            inputs=[],
+            outputs=[],
+        )
 
-    RETURN_TYPES = []
-    FUNCTION = "noop"
-    CATEGORY = "AZ_Nodes"
-
-    def noop(self):
-        return ()
+    @classmethod
+    def execute(cls):
+        return io.NodeOutput()

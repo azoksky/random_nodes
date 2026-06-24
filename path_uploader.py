@@ -153,17 +153,23 @@ async def az_upload(request: web.Request):
     })
 
 # ---------- node stub ----------
-class PathUploader:
-    """
-    UI-only node; widgets are in JS. No queue execution.
-    """
+from comfy_api.latest import io
+
+
+class PathUploader(io.ComfyNode):
+    """UI-only node; widgets are in JS. No queue execution."""
+
     @classmethod
-    def INPUT_TYPES(cls):
-        return {"required": {}}
+    def define_schema(cls):
+        return io.Schema(
+            node_id="PathUploader",
+            display_name="Upload File to Path",
+            category="AZ_Nodes",
+            description="UI-only: upload a local file to a server folder (widgets are in JS).",
+            inputs=[],
+            outputs=[],
+        )
 
-    RETURN_TYPES = ()
-    FUNCTION = "noop"
-    CATEGORY = "AZ_Nodes"
-
-    def noop(self):
-        return ()
+    @classmethod
+    def execute(cls):
+        return io.NodeOutput()

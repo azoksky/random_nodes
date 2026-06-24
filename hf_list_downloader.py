@@ -317,14 +317,21 @@ async def hf_list_cancel(request):
     _upd(gid, cancel=True)
     return web.json_response({"ok": True})
 
-class HFListDownloader:
+from comfy_api.latest import io
+
+
+class HFListDownloader(io.ComfyNode):
     @classmethod
-    def INPUT_TYPES(cls):
-        return {"required": {}}  # UI-only
+    def define_schema(cls):
+        return io.Schema(
+            node_id="hf_list_downloader",
+            display_name="HuggingFace Batch Downloader",
+            category="AZ_Nodes",
+            description="UI-only: queue and download a list of HF files (widgets are in JS).",
+            inputs=[],
+            outputs=[],
+        )
 
-    RETURN_TYPES = ()
-    FUNCTION = "noop"
-    CATEGORY = "AZ_Nodes"
-
-    def noop(self):
-        return ()
+    @classmethod
+    def execute(cls):
+        return io.NodeOutput()

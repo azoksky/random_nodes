@@ -1,9 +1,10 @@
 import torch
 import comfy
 import node_helpers
+from comfy_api.latest import io
 
 
-class WanFirstGuidingFrameToVideo:
+class WanFirstGuidingFrameToVideo(io.ComfyNode):
     """
     Supports two modes:
 
@@ -24,42 +25,41 @@ class WanFirstGuidingFrameToVideo:
     """
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "positive": ("CONDITIONING",),
-                "negative": ("CONDITIONING",),
-                "vae": ("VAE",),
-
-                "width": ("INT", {"default": 832, "min": 16, "max": 4096, "step": 16}),
-                "height": ("INT", {"default": 480, "min": 16, "max": 4096, "step": 16}),
-                "length": ("INT", {"default": 81, "min": 1, "max": 4096}),
-                "batch_size": ("INT", {"default": 1, "min": 1, "max": 4096}),
-            },
-            "optional": {
-                "start_images": ("IMAGE",),
-                "guiding_image": ("IMAGE",),
-
-                "guiding_index": ("INT", {"default": 0, "min": 0, "max": 4096}),
-                "batch_mode": ("BOOL", {"default": False}),
-
-                "clip_vision_start_images": ("CLIP_VISION_OUTPUT",),
-                "clip_vision_guiding_image": ("CLIP_VISION_OUTPUT",),
-            },
-        }
-
-    RETURN_TYPES = ("CONDITIONING", "CONDITIONING", "LATENT")
-    RETURN_NAMES = ("positive", "negative", "samples")
-    FUNCTION = "process"
-    CATEGORY = "AZ_Nodes"
-    OUTPUT_NODE = True
-
+    def define_schema(cls):
+        return io.Schema(
+            node_id="WanFirstGuidingFrameToVideo",
+            display_name="Wan First-Frame Guidance",
+            category="AZ_Nodes",
+            description="Build Wan video conditioning from start frames + a guiding frame at a chosen index.",
+            is_output_node=True,
+            inputs=[
+                io.Conditioning.Input("positive"),
+                io.Conditioning.Input("negative"),
+                io.Vae.Input("vae"),
+                io.Int.Input("width", default=832, min=16, max=4096, step=16),
+                io.Int.Input("height", default=480, min=16, max=4096, step=16),
+                io.Int.Input("length", default=81, min=1, max=4096),
+                io.Int.Input("batch_size", default=1, min=1, max=4096),
+                io.Image.Input("start_images", optional=True),
+                io.Image.Input("guiding_image", optional=True),
+                io.Int.Input("guiding_index", default=0, min=0, max=4096, optional=True),
+                io.Boolean.Input("batch_mode", default=False, optional=True),
+                io.Custom("CLIP_VISION_OUTPUT").Input("clip_vision_start_images", optional=True),
+                io.Custom("CLIP_VISION_OUTPUT").Input("clip_vision_guiding_image", optional=True),
+            ],
+            outputs=[
+                io.Conditioning.Output(display_name="positive"),
+                io.Conditioning.Output(display_name="negative"),
+                io.Latent.Output(display_name="samples"),
+            ],
+        )
 
     # -------------------------------------------------------------------------
     # MAIN PROCESS
     # -------------------------------------------------------------------------
-    def process(
-        self,
+    @classmethod
+    def execute(
+        cls,
         positive,
         negative,
         vae,
@@ -187,7 +187,7 @@ class WanFirstGuidingFrameToVideo:
                 "concat_mask": concat_mask,
             })
 
-            return (positive, negative, {"samples": latent})
+            return io.NodeOutput(positive, negative, {"samples": latent})
 
 
         # =========================================================================
@@ -229,7 +229,7 @@ class WanFirstGuidingFrameToVideo:
         try:
             concat_latent_image = vae.encode(image[:, :, :, :3])
         except:
-            concat_latENT_image = vae.encode(image.movedim(-1, 1))
+            concat_latent_image = vae.encode(image.movedim(-1, 1))
 
         # Reshape mask from 4× grouping
         concat_mask = mask.view(
@@ -252,4 +252,4 @@ class WanFirstGuidingFrameToVideo:
 
 
         # Return final latent
-        return (positive, negative, {"samples": latent})
+        return io.NodeOutput(positive, negative, {"samples": latent})
