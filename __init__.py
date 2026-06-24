@@ -11,6 +11,7 @@ from .iterative_string_node import AzIterativeString
 from .pad_square_node import AzPadSquareForInpaint
 from .seamless_stitch_node import AzSeamlessStitch
 from .detailer_inpaint_node import AzInpaintCropStitch
+from .krea2_rebalance_node import AzKrea2ProjectorRebalance
 
 
 NODE_CLASS_MAPPINGS = {
@@ -33,6 +34,7 @@ NODE_CLASS_MAPPINGS = {
     "AzPadSquareForInpaint": AzPadSquareForInpaint,
     "AzSeamlessStitch": AzSeamlessStitch,
     "AzDetailerInpaint": AzInpaintCropStitch,
+    "AzKrea2ProjectorRebalance": AzKrea2ProjectorRebalance,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -55,6 +57,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "AzPadSquareForInpaint": "Pad Square For Inpaint",
     "AzSeamlessStitch": "Seamless Stitch",
     "AzDetailerInpaint": "Inpaint (Crop & Stitch)",
+    "AzKrea2ProjectorRebalance": "Krea2 Text-Fusion Rebalance (Projector)",
 }
 
 WEB_DIRECTORY = "./js"
