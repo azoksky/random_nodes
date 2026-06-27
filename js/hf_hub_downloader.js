@@ -12,13 +12,19 @@ function ensureActiveVisible(dropdown, activeIndex) {
   else if (bottom > viewBottom) dropdown.scrollTop = bottom - dropdown.clientHeight;
 }
 
+// Nodes 2.0: the whole UI lives in ONE wrap behind a single addDOMWidget.
 function injectCSSOnce() {
   const id = "az-hf-css";
   if (document.getElementById(id)) return;
   const style = document.createElement("style");
   style.id = id;
   style.textContent =
-    ".az-row{width:100%}\
+    ".az-hf-wrap{display:flex;flex-direction:column;gap:8px;width:100%;box-sizing:border-box;\
+       font-family:var(--font-family,'Segoe UI',sans-serif)}\
+     .az-hf-input{width:100%;height:26px;padding:8px;border:1px solid var(--border-color,#444);\
+       border-radius:6px;background:var(--comfy-input-bg,#2a2a2a);color:var(--input-text,#ddd);box-sizing:border-box;outline:none}\
+     .az-hf-input:focus{border-color:var(--p-primary-color,#5b8cff)}\
+     .az-row{width:100%}\
      .az-btn{padding:8px 14px;border:1px solid var(--border-color,#555);border-radius:6px;background:var(--p-primary-color,#2f75ff);color:var(--p-button-text-primary-color,#fff);cursor:pointer}\
      .az-btn:disabled{opacity:.6;cursor:not-allowed}\
      .az-btn-secondary{background:var(--comfy-input-bg,#333);color:var(--input-text,#ddd)}\
@@ -65,22 +71,16 @@ app.registerExtension({
       this._startTS = null;
       this._elapsedTimer = null;
 
-      const rowH = 40;
-      const smallRowH = 24;
+      // ===== One wrap holds the whole UI (single DOM widget) =====
+      const wrap = document.createElement("div");
+      wrap.className = "az-hf-wrap";
 
       // Repository input
       const repoInput = document.createElement("input");
       repoInput.type = "text";
+      repoInput.className = "az-hf-input";
       repoInput.placeholder = "Repository ID (e.g. runwayml/stable-diffusion-v1-5)";
       repoInput.value = this.properties.repo_id || "";
-      Object.assign(repoInput.style, {
-        width: "100%", height: "26px", padding: "8px",
-        border: "1px solid var(--border-color,#444)", borderRadius: "6px",
-        background: "var(--comfy-input-bg, #2a2a2a)", color: "var(--input-text,#ddd)",
-        boxSizing: "border-box", outline: "none"
-      });
-      const repoWidget = this.addDOMWidget("repo_id", "Repository", repoInput);
-      repoWidget.computeSize = () => [this.size[0] - 20, rowH];
       repoInput.addEventListener("input", () => {
         this.properties.repo_id = repoInput.value;
       });
@@ -88,16 +88,9 @@ app.registerExtension({
       // Filename input
       const fileInput = document.createElement("input");
       fileInput.type = "text";
+      fileInput.className = "az-hf-input";
       fileInput.placeholder = "Filename (e.g. model.safetensors)";
       fileInput.value = this.properties.filename || "";
-      Object.assign(fileInput.style, {
-        width: "100%", height: "26px", padding: "8px",
-        border: "1px solid var(--border-color,#444)", borderRadius: "6px",
-        background: "var(--comfy-input-bg, #2a2a2a)", color: "var(--input-text,#ddd)",
-        boxSizing: "border-box", outline: "none"
-      });
-      const fileWidget = this.addDOMWidget("filename", "Filename", fileInput);
-      fileWidget.computeSize = () => [this.size[0] - 20, rowH];
       fileInput.addEventListener("input", () => {
         this.properties.filename = fileInput.value;
       });
@@ -108,14 +101,10 @@ app.registerExtension({
 
       const tokenInput = document.createElement("input");
       tokenInput.type = "password";
+      tokenInput.className = "az-hf-input";
+      tokenInput.style.flex = "1";
       tokenInput.placeholder = "HF Token (auto-filled from env if available)";
       tokenInput.value = this.properties.token || "";
-      Object.assign(tokenInput.style, {
-        flex: "1", height: "26px", padding: "8px",
-        border: "1px solid var(--border-color,#444)", borderRadius: "6px",
-        background: "var(--comfy-input-bg, #2a2a2a)", color: "var(--input-text,#ddd)",
-        boxSizing: "border-box", outline: "none"
-      });
 
       const tokenHint = document.createElement("span");
       tokenHint.style.color = "var(--descrip-text,#888)";
@@ -123,8 +112,6 @@ app.registerExtension({
 
       tokenRow.appendChild(tokenInput);
       tokenRow.appendChild(tokenHint);
-      const tokenWidget = this.addDOMWidget("token", "Token", tokenRow);
-      tokenWidget.computeSize = () => [this.size[0] - 20, rowH];
 
       tokenInput.addEventListener("input", () => {
         this._autoToken = false;
@@ -158,21 +145,16 @@ app.registerExtension({
 
       const destInput = document.createElement("input");
       destInput.type = "text";
+      destInput.className = "az-hf-input";
       destInput.placeholder = "Destination folder (e.g. ./models)";
       destInput.value = this.properties.dest_dir || "";
-      Object.assign(destInput.style, {
-        width: "100%", height: "26px", padding: "8px",
-        border: "1px solid var(--border-color,#444)", borderRadius: "6px",
-        background: "var(--comfy-input-bg, #2a2a2a)", color: "var(--input-text,#ddd)",
-        boxSizing: "border-box", outline: "none"
-      });
 
       const dropdown = document.createElement("div");
       Object.assign(dropdown.style, {
         position: "fixed", background: "var(--comfy-menu-bg,#222)", border: "1px solid var(--border-color,#555)",
         display: "none", maxHeight: "200px", overflowY: "auto", fontSize: "12px",
         borderRadius: "6px", boxShadow: "0 8px 16px rgba(0,0,0,.35)",
-        zIndex: "999999", minWidth: "180px"
+        zIndex: "999999", minWidth: "180px", color: "var(--input-text,#ddd)"
       });
       document.body.appendChild(dropdown);
 
@@ -184,8 +166,6 @@ app.registerExtension({
       };
 
       container.appendChild(destInput);
-      const destWidget = this.addDOMWidget("dest_dir", "Destination", container);
-      destWidget.computeSize = () => [this.size[0] - 20, rowH];
 
       let items = [];
       let active = -1;
@@ -226,7 +206,6 @@ app.registerExtension({
           dropdown.appendChild(row);
         }
         placeDropdown();
-        // restore scroll, then make sure active is visible
         dropdown.style.display = "block";
         dropdown.scrollTop = prevScroll;
         if (active >= 0 && dropdown.children.length > active) {
@@ -259,7 +238,6 @@ app.registerExtension({
           items = [];
         }
         active = items.length ? 0 : -1;
-        // Only show dropdown when the input is focused to avoid async re-opening after blur
         if (document.activeElement === destInput) {
           renderDropdown();
         } else {
@@ -272,7 +250,6 @@ app.registerExtension({
         debounceTimer = setTimeout(fetchChildren, 180);
       };
 
-      // input normalization + caret restore (fixed delta)
       destInput.addEventListener("input", () => {
         const raw = destInput.value;
         const prevStart = destInput.selectionStart || 0;
@@ -287,7 +264,6 @@ app.registerExtension({
         scheduleFetch();
       });
 
-      // When focusing: if field is empty, fetch server root (prefers COMFYUI_MODEL_PATH then COMFYUI_PATH on server).
       destInput.addEventListener("focus", async () => {
         placeDropdown();
         if (!destInput.value || !destInput.value.trim()) {
@@ -296,7 +272,6 @@ app.registerExtension({
             const data = await resp.json();
             if (data?.ok && data.root) {
               const root = (data.root || "").replace(/\\/g, "/");
-              // Only override if dest wasn't already set in node properties
               if (!this.properties.dest_dir) {
                 destInput.value = root;
                 this.properties.dest_dir = root;
@@ -312,7 +287,6 @@ app.registerExtension({
         scheduleFetch();
       });
 
-      // keyboard nav + ensure active is visible
       destInput.addEventListener("keydown", (e) => {
         if (dropdown.style.display !== "block" || !items.length) return;
         if (e.key === "ArrowDown") {
@@ -336,14 +310,12 @@ app.registerExtension({
         }
       });
 
-      // Hide dropdown on blur immediately and cancel pending fetches
       destInput.addEventListener("blur", () => {
         if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
         items = []; active = -1;
         dropdown.style.display = "none";
       });
 
-      // Close dropdown when clicking outside container (robust)
       const docHandler = (ev) => {
         if (!container.contains(ev.target) && !dropdown.contains(ev.target)) {
           if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
@@ -369,27 +341,20 @@ app.registerExtension({
       btnRow.appendChild(downloadBtn);
       btnRow.appendChild(stopBtn);
 
-      const btnWidget = this.addDOMWidget("actions", "", btnRow);
-      btnWidget.computeSize = () => [this.size[0] - 20, rowH];
-
       // Progress row (indeterminate)
       const progress = document.createElement("div");
       progress.className = "az-progress";
       const bar = document.createElement("div");
       bar.className = "bar";
       progress.appendChild(bar);
-      const progressWidget = this.addDOMWidget("progress", "", progress);
-      progressWidget.computeSize = () => [this.size[0] - 20, smallRowH];
 
-      // Status row (DOM text)
+      // Status row
       const statusEl = document.createElement("div");
       statusEl.style.color = "var(--descrip-text,#ccc)";
       statusEl.style.fontSize = "12px";
       statusEl.style.width = "100%";
       statusEl.style.textAlign = "center";
       statusEl.textContent = "Ready";
-      const statusWidget = this.addDOMWidget("status", "", statusEl);
-      statusWidget.computeSize = () => [this.size[0] - 20, smallRowH];
 
       // Elapsed row
       const timeEl = document.createElement("div");
@@ -398,8 +363,11 @@ app.registerExtension({
       timeEl.style.width = "100%";
       timeEl.style.textAlign = "center";
       timeEl.textContent = "Elapsed: 0s";
-      const timeWidget = this.addDOMWidget("elapsed", "", timeEl);
-      timeWidget.computeSize = () => [this.size[0] - 20, smallRowH];
+
+      // Assemble single wrap
+      wrap.append(repoInput, fileInput, tokenRow, container, btnRow, progress, statusEl, timeEl);
+      const uiWidget = this.addDOMWidget("ui", "", wrap, { serialize: false });
+      uiWidget.computeSize = () => [this.size[0] - 20, 280];
 
       const setDownloading = (on) => {
         downloadBtn.disabled = on;
@@ -530,19 +498,16 @@ app.registerExtension({
         if (oldRemoved) oldRemoved.apply(this, arguments);
       };
 
-      // Prefill the destInput with the server's working directory (ComfyUI installation/run folder)
-      // The server's /az/listdir with no path returns root = os.path.abspath(os.getcwd()) or env override.
+      // Prefill the destInput with the server's working directory.
       (async ()=>{
         try {
           const resp = await api.fetchApi(`/az/listdir`);
           const data = await resp.json();
           if (data?.ok && data.root) {
             const root = (data.root || "").replace(/\\/g, "/");
-            // Only override if dest wasn't already set in node properties
             if (!this.properties.dest_dir) {
               destInput.value = root;
               this.properties.dest_dir = root;
-              // prefetch children for snappy keyboard navigation; do NOT render dropdown unless focused
               if (debounceTimer) clearTimeout(debounceTimer);
               debounceTimer = setTimeout(fetchChildren, 50);
             }
@@ -553,7 +518,7 @@ app.registerExtension({
       })();
 
       // Good default size
-      this.size = [520, 320];
+      this.size = [520, 340];
 
       return r;
     };

@@ -1,14 +1,16 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
-// Nodes 2.0: progress + meta are DOM widgets (onDrawForeground is not called by the
-// Vue renderer), and all colors use theme CSS variables.
+// Nodes 2.0: the whole UI lives in ONE wrap element behind a single addDOMWidget.
+// Multiple separate DOM widgets collapse under the Vue renderer (buttons vanish).
 function injectCSSOnce() {
   const id = "az-aria2-css";
   if (document.getElementById(id)) return;
   const style = document.createElement("style");
   style.id = id;
   style.textContent =
+    ".az-aria-wrap{display:flex;flex-direction:column;gap:8px;width:100%;box-sizing:border-box;" +
+      "font-family:var(--font-family,'Segoe UI',sans-serif)}" +
     ".az-row{width:100%}" +
     ".az-btn{padding:8px 14px;border:1px solid var(--border-color,#555);border-radius:6px;" +
       "background:var(--p-primary-color,#2f75ff);color:var(--p-button-text-primary-color,#fff);cursor:pointer}" +
@@ -91,7 +93,9 @@ app.registerExtension({
       this._elapsedSec = 0;
       this._autoToken = (this.properties.token || "").trim() === "";
 
-      const rowH = 40;
+      // ===== One wrap holds the whole UI (single DOM widget) =====
+      const wrap = document.createElement("div");
+      wrap.className = "az-aria-wrap";
 
       // URL input (top)
       const urlInput = document.createElement("input");
@@ -99,8 +103,6 @@ app.registerExtension({
       urlInput.placeholder = "URL";
       urlInput.value = this.properties.url || "";
       urlInput.className = "az-aria-input";
-      const urlWidget = this.addDOMWidget("url", "URL", urlInput);
-      urlWidget.computeSize = () => [this.size[0] - 20, rowH];
 
       // Token input + hint
       const tokenRow = document.createElement("div");
@@ -119,8 +121,6 @@ app.registerExtension({
 
       tokenRow.appendChild(tokenInput);
       tokenRow.appendChild(tokenHint);
-      const tokenWidget = this.addDOMWidget("token", "Token", tokenRow);
-      tokenWidget.computeSize = () => [this.size[0] - 20, rowH];
 
       // Track server-provided last-4 token hints
       let tokenSuffixes = { hf: "", civit: "" };
@@ -171,8 +171,6 @@ app.registerExtension({
       };
 
       container.appendChild(destInput);
-      const destWidget = this.addDOMWidget("dest_dir", "Destination", container);
-      destWidget.computeSize = () => [this.size[0] - 20, rowH];
 
       let items = []; let active = -1; let debounceTimer = null;
 
@@ -380,26 +378,17 @@ app.registerExtension({
       btnRow.appendChild(downloadBtn);
       btnRow.appendChild(stopBtn);
 
-      const btnWidget = this.addDOMWidget("actions", "", btnRow);
-      btnWidget.computeSize = () => [this.size[0] - 20, rowH];
-
       // Small DOM status
       const statusEl = document.createElement("div");
       statusEl.className = "az-aria-status";
       statusEl.textContent = "Ready";
-      const statusWidget = this.addDOMWidget("status", "", statusEl);
-      statusWidget.computeSize = () => [this.size[0] - 20, 24];
 
-      // Meta line + saved path + progress bar (DOM; replaces onDrawForeground)
+      // Meta line + saved path + progress bar
       const metaEl = document.createElement("div");
       metaEl.className = "az-aria-meta";
-      const metaWidget = this.addDOMWidget("meta", "", metaEl, { serialize: false });
-      metaWidget.computeSize = () => [this.size[0] - 20, 20];
 
       const savedEl = document.createElement("div");
       savedEl.className = "az-aria-saved";
-      const savedWidget = this.addDOMWidget("saved", "", savedEl, { serialize: false });
-      savedWidget.computeSize = () => [this.size[0] - 20, 20];
 
       const bar = document.createElement("div");
       bar.className = "az-bar";
@@ -408,8 +397,11 @@ app.registerExtension({
       const barPct = document.createElement("div");
       barPct.className = "az-bar-pct";
       bar.append(barFill, barPct);
-      const barWidget = this.addDOMWidget("progress", "", bar, { serialize: false });
-      barWidget.computeSize = () => [this.size[0] - 20, 22];
+
+      // Assemble the single wrap
+      wrap.append(urlInput, tokenRow, container, btnRow, statusEl, metaEl, savedEl, bar);
+      const uiWidget = this.addDOMWidget("ui", "", wrap, { serialize: false });
+      uiWidget.computeSize = () => [this.size[0] - 20, 250];
 
       const renderProgress = () => {
         metaEl.textContent = "Status: " + this._status
@@ -539,7 +531,7 @@ app.registerExtension({
         }
       });
 
-      this.size = [520, 360];
+      this.size = [520, 330];
       renderProgress();
 
       // Reposition dropdown on scroll/resize
