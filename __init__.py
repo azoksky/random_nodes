@@ -13,6 +13,7 @@ from .seamless_stitch_node import AzSeamlessStitch
 from .detailer_inpaint_node import AzInpaintCropStitch
 from .krea2_rebalance_node import AzKrea2ProjectorRebalance
 from .krea2_gated_rebalance_node import AzKrea2GatedRebalance
+from .gated_lora_node import AzGatedLoraLoader
 
 
 class RandomNodesExtension(ComfyExtension):
@@ -31,6 +32,7 @@ class RandomNodesExtension(ComfyExtension):
             AzInpaintCropStitch,
             AzKrea2ProjectorRebalance,
             AzKrea2GatedRebalance,
+            AzGatedLoraLoader,
         ]
 
 
