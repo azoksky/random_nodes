@@ -366,7 +366,7 @@ app.registerExtension({
 
       // Assemble single wrap
       wrap.append(repoInput, fileInput, tokenRow, container, btnRow, progress, statusEl, timeEl);
-      const uiWidget = this.addDOMWidget("ui", "", wrap, { serialize: false });
+      const uiWidget = this.addDOMWidget("hf_ui", "HF File Downloader", wrap);
       uiWidget.computeSize = () => [this.size[0] - 20, 280];
 
       const setDownloading = (on) => {

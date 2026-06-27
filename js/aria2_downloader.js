@@ -400,7 +400,7 @@ app.registerExtension({
 
       // Assemble the single wrap
       wrap.append(urlInput, tokenRow, container, btnRow, statusEl, metaEl, savedEl, bar);
-      const uiWidget = this.addDOMWidget("ui", "", wrap, { serialize: false });
+      const uiWidget = this.addDOMWidget("aria2_ui", "Aria2 Downloader", wrap);
       uiWidget.computeSize = () => [this.size[0] - 20, 250];
 
       const renderProgress = () => {
