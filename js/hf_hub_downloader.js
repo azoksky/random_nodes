@@ -498,24 +498,33 @@ app.registerExtension({
         if (oldRemoved) oldRemoved.apply(this, arguments);
       };
 
-      // Prefill the destInput with the server's working directory.
-      (async ()=>{
-        try {
-          const resp = await api.fetchApi(`/az/listdir`);
-          const data = await resp.json();
-          if (data?.ok && data.root) {
+      // Fetch the server's default working directory into destInput (only if empty).
+      const fetchDefaultRoot = () => {
+        api.fetchApi(`/az/listdir`).then((r) => r.json()).then((data) => {
+          if (data?.ok && data.root && !this.properties.dest_dir) {
             const root = (data.root || "").replace(/\\/g, "/");
-            if (!this.properties.dest_dir) {
-              destInput.value = root;
-              this.properties.dest_dir = root;
-              if (debounceTimer) clearTimeout(debounceTimer);
-              debounceTimer = setTimeout(fetchChildren, 50);
-            }
+            destInput.value = root;
+            this.properties.dest_dir = root;
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(fetchChildren, 50);
           }
-        } catch (e) {
-          // ignore; leave whatever the current value is
-        }
-      })();
+        }).catch(() => {});
+      };
+
+      // Restore DOM fields from a loaded/cached workflow (fires after deserialization).
+      const prevConfigure = this.onConfigure;
+      this.onConfigure = function (info) {
+        prevConfigure?.apply(this, arguments);
+        if (this.properties.repo_id) repoInput.value = this.properties.repo_id;
+        if (this.properties.filename) fileInput.value = this.properties.filename;
+        if ((this.properties.token || "").trim() !== "") tokenInput.value = this.properties.token;
+        const savedDest = (this.properties.dest_dir || "").trim();
+        if (savedDest) destInput.value = savedDest;
+        else fetchDefaultRoot();
+      };
+
+      // Fresh node (not from a saved workflow): onConfigure won't fire.
+      fetchDefaultRoot();
 
       // Good default size
       this.size = [520, 340];

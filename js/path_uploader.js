@@ -347,24 +347,30 @@ app.registerExtension({
       this.size=[520,300];
       render();
 
-      // Prefill the destInput with the server's working directory.
-      (async ()=>{
-        try {
-          const resp = await api.fetchApi(`/az/listdir`);
-          const data = await resp.json();
-          if (data?.ok && data.root) {
+      // Fetch the server's default working directory into destInput (only if empty).
+      const fetchDefaultRoot = () => {
+        api.fetchApi(`/az/listdir`).then((r) => r.json()).then((data) => {
+          if (data?.ok && data.root && !this.properties.dest_dir) {
             const root = normalizePath(data.root);
-            if (!this.properties.dest_dir) {
-              destInput.value = root;
-              this.properties.dest_dir = root;
-              if (debounceTimer) clearTimeout(debounceTimer);
-              debounceTimer = setTimeout(fetchChildren, 50);
-            }
+            destInput.value = root;
+            this.properties.dest_dir = root;
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(fetchChildren, 50);
           }
-        } catch (e) {
-          // ignore; leave whatever the current value is
-        }
-      })();
+        }).catch(() => {});
+      };
+
+      // Restore DOM field from a loaded/cached workflow (fires after deserialization).
+      const prevConfigure = this.onConfigure;
+      this.onConfigure = function (info) {
+        prevConfigure?.apply(this, arguments);
+        const savedDest = normalizePath(this.properties.dest_dir || "").trim();
+        if (savedDest) destInput.value = savedDest;
+        else fetchDefaultRoot();
+      };
+
+      // Fresh node (not from a saved workflow): onConfigure won't fire.
+      fetchDefaultRoot();
 
       // kick suggestions if prefilled (legacy path)
       if(destInput.value) setTimeout(()=>destInput.dispatchEvent(new Event("input")), 50);
