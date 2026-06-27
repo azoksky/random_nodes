@@ -446,9 +446,9 @@ async def tokens_resolve(request):
     # Used by the UI to auto-fill the token field from env based on URL domain
     url = (request.query.get("url") or "").lower()
     token = ""
-    if ("huggingface.co" in url) or ("cdn-lfs.huggingface.co" in url):
+    if ("huggingface" in url) or ("cdn-lfs.huggingface.co" in url):
         token = HF_TOKEN
-    elif "civitai.com" in url:
+    elif "civitai" in url:
         token = CIVIT_TOKEN
     return web.json_response({"token": token or ""})
 
