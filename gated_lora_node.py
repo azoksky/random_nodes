@@ -18,9 +18,30 @@ timestep-gated (text encode is one-shot) so `strength_clip` applies constantly.
 import folder_paths
 import comfy.utils
 import comfy.hooks
+import comfy.model_patcher as _mp
 from comfy_api.latest import io
 
 _RAMP_STEPS = 8
+
+
+def _install_scaled_weight_guard():
+    """fp8-scaled models list *.weight_scale in state_dict() that aren't real
+    module attributes. The hook snapshot (patch_hooks -> get_key_patches) walks
+    every key and raises AttributeError on those. They're never LoRA targets, so
+    a null snapshot is harmless. Guard exactly that AttributeError."""
+    orig = _mp.get_key_weight
+    if getattr(orig, "_az_guarded", False):
+        return
+    def guarded(model, key):
+        try:
+            return orig(model, key)
+        except AttributeError:
+            return None, None, None
+    guarded._az_guarded = True
+    _mp.get_key_weight = guarded
+
+
+_install_scaled_weight_guard()
 
 
 def _clamp(v, lo, hi):
