@@ -45,9 +45,10 @@ def _install_scaled_weight_guard():
         except AttributeError:
             return None, None, None
         if set_func is not None and not getattr(set_func, "_az_noinplace", False):
+            real_set = set_func
             def wrapped_set(*a, **kw):
                 kw["inplace_update"] = False
-                return set_func(*a, **kw)
+                return real_set(*a, **kw)
             wrapped_set._az_noinplace = True
             set_func = wrapped_set
         return weight, set_func, convert_func
