@@ -14,6 +14,7 @@ from .detailer_inpaint_node import AzInpaintCropStitch
 from .krea2_rebalance_node import AzKrea2ProjectorRebalance
 from .krea2_gated_rebalance_node import AzKrea2GatedRebalance
 from .gated_lora_node import AzGatedLoraLoader
+from .gated_lora_sampler_node import AzGatedLoraSampler
 
 
 class RandomNodesExtension(ComfyExtension):
@@ -33,6 +34,7 @@ class RandomNodesExtension(ComfyExtension):
             AzKrea2ProjectorRebalance,
             AzKrea2GatedRebalance,
             AzGatedLoraLoader,
+            AzGatedLoraSampler,
         ]
 
 
