@@ -25,18 +25,33 @@ _RAMP_STEPS = 8
 
 
 def _install_scaled_weight_guard():
-    """fp8-scaled models list *.weight_scale in state_dict() that aren't real
-    module attributes. The hook snapshot (patch_hooks -> get_key_patches) walks
-    every key and raises AttributeError on those. They're never LoRA targets, so
-    a null snapshot is harmless. Guard exactly that AttributeError."""
+    """Make ComfyUI's weight-hook path work on quantized (fp8/NVFP4) models.
+
+    Two core gaps, both surfaced via get_key_weight:
+      1. Quantized models list *.weight_scale in state_dict() that aren't real
+         module attributes, so the hook snapshot (patch_hooks -> get_key_patches)
+         raises AttributeError. Those keys are never LoRA targets -> null snapshot.
+      2. Quantized ops' set_weight forbids inplace_update (ops.py assert), but the
+         hook path hard-codes inplace_update=True. Coerce it to False -- the same
+         non-inplace path that normal (ungated) LoRA already uses on these models.
+    """
     orig = _mp.get_key_weight
     if getattr(orig, "_az_guarded", False):
         return
+
     def guarded(model, key):
         try:
-            return orig(model, key)
+            weight, set_func, convert_func = orig(model, key)
         except AttributeError:
             return None, None, None
+        if set_func is not None and not getattr(set_func, "_az_noinplace", False):
+            def wrapped_set(*a, **kw):
+                kw["inplace_update"] = False
+                return set_func(*a, **kw)
+            wrapped_set._az_noinplace = True
+            set_func = wrapped_set
+        return weight, set_func, convert_func
+
     guarded._az_guarded = True
     _mp.get_key_weight = guarded
 
