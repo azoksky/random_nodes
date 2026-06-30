@@ -28,7 +28,8 @@ import { api } from "../../scripts/api.js";
                   border:1px solid var(--border-color,#2b3242); background:var(--comfy-input-bg,#171b24);
                   color:#dbe6f7; white-space:pre-wrap; word-break:break-word; }
   .azpe-preview:empty::before { content:"Output will stream here…"; color:#5d6678; }
-  /* word-by-word reveal (copied from the webchat) */
+  .azpe-preview.err { color:#ff8a8a; }
+  /* word-by-word reveal (from the webchat) — each completed word animates once */
   .azpe-preview .rw { display:inline; }
   .azpe-preview .rw-anim { display:inline-block;
                   animation:azpeWord .34s cubic-bezier(0,0,0,1) both; }
@@ -60,7 +61,7 @@ app.registerExtension({
       const wTok = findW("llama_token");
       const wLlm = findW("llm_model");
 
-      // ---- UI: control row + streaming preview ----
+      // ---- UI ----
       const ui = el("div", "azpe-ui");
       const row = el("div", "azpe-row");
       const light = el("span", "azpe-light");
@@ -76,93 +77,93 @@ app.registerExtension({
       }
       const btn = el("button", "azpe-btn", "Connect");
       row.append(light, sel, btn);
-
       const preview = el("div", "azpe-preview");
       ui.append(row, preview);
 
       const domW = this.addDOMWidget("azpe_ui", "Prompt Enhancer", ui, { serialize: false });
       domW.serializeValue = () => undefined;
       domW.computeSize = () => [this.size[0] - 20, 272];
-
       const di = this.widgets.indexOf(domW);
       if (di >= 0) this.widgets.splice(di, 1);
       const li = wLlm ? this.widgets.indexOf(wLlm) : -1;
       if (li >= 0) this.widgets.splice(li + 1, 0, domW);
       else this.widgets.unshift(domW);
 
-      // ---- light: red(off) / green(ok) / green slow-blink(busy) ----
-      // Blink is a self-driven 300ms-gated loop. `injob` rejects overlapping
-      // toggles, so calling lightBusy() on every delta cannot speed it up.
-      let blinking = false;   // desired state: should it be pulsing?
-      let injob = false;      // a phase toggle is in progress (the gate)
-      let phaseOn = false;    // current dim phase
-      let blinkTimer = null;
+      // ---- base light colour (connection state) ----
+      const lightOk  = () => light.classList.add("ok");
+      const lightErr = () => light.classList.remove("ok");
 
+      // ---- gated 300ms blink (overlay), driven purely by app.runningNodeId ----
+      let blinking = false, injob = false, phaseOn = false, blinkTimer = null;
       const blinkLoop = () => {
         blinkTimer = null;
-        if (injob) return;            // a toggle already pending -> reject
+        if (injob) return;
         injob = true;
-        if (!blinking) {              // stopped: settle to solid, release gate
-          phaseOn = false;
-          light.classList.remove("dim");
-          injob = false;
-          return;
-        }
+        if (!blinking) { phaseOn = false; light.classList.remove("dim"); injob = false; return; }
         phaseOn = !phaseOn;
         light.classList.toggle("dim", phaseOn);
-        // hold this phase for ~300ms, then release the gate and schedule next
         blinkTimer = setTimeout(() => { injob = false; blinkLoop(); }, 300);
       };
-
-      const lightBusy = () => {
-        light.classList.add("ok");
-        if (blinking) return;         // already pulsing -> ignore repeat calls
+      const startBlink = () => {
+        if (blinking) return;
         blinking = true;
         if (!injob && !blinkTimer) blinkLoop();
       };
       const stopBlink = () => {
+        if (!blinking && !blinkTimer && !light.classList.contains("dim")) return;
         blinking = false;
         if (blinkTimer) { clearTimeout(blinkTimer); blinkTimer = null; }
-        injob = false;
-        phaseOn = false;
+        injob = false; phaseOn = false;
         light.classList.remove("dim");
       };
-      const lightOk  = () => { stopBlink(); light.classList.add("ok"); };
-      const lightErr = () => { stopBlink(); light.classList.remove("ok"); };
+      // single local source of truth: is THIS node the one executing?
+      const watch = setInterval(() => {
+        const busy = app.runningNodeId != null && String(app.runningNodeId) === String(this.id);
+        if (busy) startBlink(); else stopBlink();
+      }, 150);
 
-      // ---- gentle eased autoscroll (webchat-style, unconditional) ----
-      let _anim = false;
+      // ---- autoscroll: glide only while pinned to bottom; releases on scroll-up ----
+      let stick = true, lastSetTop = -1, scrolling = false;
+      preview.addEventListener("scroll", () => {
+        if (Math.abs(preview.scrollTop - lastSetTop) < 2) return; // ignore our own scrolls
+        const gap = preview.scrollHeight - preview.scrollTop - preview.clientHeight;
+        stick = gap <= 6;
+      }, { passive: true });
       const autoscroll = () => {
-        if (_anim) return;
-        _anim = true;
+        if (!stick || scrolling) return;
+        scrolling = true;
         const step = () => {
+          if (!stick) { scrolling = false; return; }
           const target = preview.scrollHeight - preview.clientHeight;
           const diff = target - preview.scrollTop;
-          if (diff < 0.5) { preview.scrollTop = target; _anim = false; return; }
-          preview.scrollTop += diff * 0.12;       // soft continuous glide
+          if (diff < 0.5) { preview.scrollTop = target; lastSetTop = preview.scrollTop; scrolling = false; return; }
+          preview.scrollTop += diff * 0.08;        // slow, soft glide
+          lastSetTop = preview.scrollTop;
           requestAnimationFrame(step);
         };
         requestAnimationFrame(step);
       };
 
-      // ---- word-by-word reveal: re-render full text, animate only new words ----
-      let acc = "";
-      let revealed = 0;
-      const render = () => {
-        const frag = document.createDocumentFragment();
-        let idx = 0;
-        for (const part of acc.split(/(\s+)/)) {
-          if (part === "") continue;
-          if (/^\s+$/.test(part)) { frag.appendChild(document.createTextNode(part)); continue; }
-          const span = el("span", idx >= revealed ? "rw rw-anim" : "rw", part);
-          idx++;
-          frag.appendChild(span);
+      // ---- word reveal: append each completed word once; hold the partial tail ----
+      let tail = "";
+      const reset = () => { tail = ""; preview.classList.remove("err"); preview.innerHTML = ""; stick = true; };
+      const feed = (text) => {
+        const parts = (tail + text).split(/(\s+)/);
+        tail = "";
+        for (let i = 0; i < parts.length; i++) {
+          const p = parts[i];
+          if (p === "") continue;
+          if (/^\s+$/.test(p)) { preview.appendChild(document.createTextNode(p)); continue; }
+          if (i === parts.length - 1) { tail = p; }       // unfinished word, wait for next delta
+          else preview.appendChild(el("span", "rw rw-anim", p));
         }
-        preview.innerHTML = "";
-        preview.appendChild(frag);
-        revealed = idx;
+        autoscroll();
       };
-      const reset = () => { acc = ""; revealed = 0; preview.innerHTML = ""; };
+      const flush = () => {
+        if (tail.trim()) preview.appendChild(el("span", "rw rw-anim", tail));
+        tail = "";
+        autoscroll();
+      };
 
       // ---- connect ----
       sel.addEventListener("change", () => { if (wLlm) wLlm.value = sel.value; this.setDirtyCanvas(true, true); });
@@ -191,45 +192,22 @@ app.registerExtension({
       };
       btn.addEventListener("click", connect);
 
-      // ---- streaming from execute() ----
+      // ---- streamed text only (light is independent) ----
       const handler = (ev) => {
         const d = ev.detail || {};
         if (String(d.id) !== String(this.id)) return;
-        if (d.status === "start") { reset(); lightBusy(); }
-        else if (d.status === "delta") {
-          if (typeof d.text === "string" && d.text) {
-            acc += d.text;
-            lightBusy();           // keep it blinking even if 'start' was missed
-            render();
-            autoscroll();
-          }
-        }
-        else if (d.status === "done") { lightOk(); autoscroll(); }
-        else if (d.status === "error") { lightErr(); }
+        if (d.status === "start") reset();
+        else if (d.status === "delta") { if (typeof d.text === "string" && d.text) feed(d.text); }
+        else if (d.status === "done") flush();
+        else if (d.status === "error") { preview.classList.add("err"); preview.textContent = d.error || "Error"; }
       };
       api.addEventListener("az_prompt_enhancer", handler);
 
-      // fallback so the light blinks even if the custom messages are delayed
-      const parseId = (detail) => {
-        if (detail == null) return null;
-        const id = (typeof detail === "object") ? (detail.node ?? detail.id ?? detail.node_id) : detail;
-        return id == null ? null : String(id);
-      };
-      const onExec = (ev) => { if (parseId(ev.detail) === String(this.id)) lightBusy(); };
-      const onEnd  = () => stopBlink();
-      api.addEventListener("executing", onExec);
-      api.addEventListener("execution_success", onEnd);
-      api.addEventListener("execution_error", onEnd);
-      api.addEventListener("execution_interrupted", onEnd);
-
       const prevOnRemoved = this.onRemoved;
       this.onRemoved = function () {
+        clearInterval(watch);
         if (blinkTimer) { clearTimeout(blinkTimer); blinkTimer = null; }
         api.removeEventListener("az_prompt_enhancer", handler);
-        api.removeEventListener("executing", onExec);
-        api.removeEventListener("execution_success", onEnd);
-        api.removeEventListener("execution_error", onEnd);
-        api.removeEventListener("execution_interrupted", onEnd);
         return prevOnRemoved ? prevOnRemoved.apply(this, arguments) : undefined;
       };
 
