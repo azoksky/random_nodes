@@ -138,7 +138,8 @@ app.registerExtension({
       };
       btn.addEventListener("click", connect);
 
-      // ---- live progress from execute() ----
+      // ---- live progress ----
+      // Status text comes from execute() via our custom event…
       const handler = (ev) => {
         const d = ev.detail || {};
         if (String(d.id) !== String(this.id)) return;
@@ -148,9 +149,19 @@ app.registerExtension({
       };
       api.addEventListener("az_prompt_enhancer", handler);
 
+      // …but the animated bar is driven by ComfyUI's own executing event, which
+      // reliably brackets the (long) run of this node.
+      const onExec = (ev) => {
+        const running = ev.detail != null && String(ev.detail) === String(this.id);
+        setBar(running);
+        if (running) setStatus("Enhancing prompt…");
+      };
+      api.addEventListener("executing", onExec);
+
       const prevOnRemoved = this.onRemoved;
       this.onRemoved = function () {
         api.removeEventListener("az_prompt_enhancer", handler);
+        api.removeEventListener("executing", onExec);
         return prevOnRemoved ? prevOnRemoved.apply(this, arguments) : undefined;
       };
 

@@ -150,13 +150,13 @@ class AzPromptEnhancer(io.ComfyNode):
                 io.String.Input("prompt", force_input=True),
                 io.Combo.Input("image_model", options=_MODEL_OPTIONS, default=_MODEL_OPTIONS[0]),
                 io.String.Input("llama_url", default=os.environ.get("LLAMA_URL", "")),
-                io.String.Input("llama_token", default=os.environ.get("LLAMA_TOKEN", "")),
+                io.String.Input("llama_token", default=""),
                 io.String.Input("llm_model", default=""),
                 io.Boolean.Input("unrestricted", default=True, label_on="Uncensored", label_off="SFW"),
                 io.Int.Input("seed", default=0, min=0, max=0xffffffffffffffff,
                              control_after_generate=True),
                 io.Float.Input("temperature", default=0.8, min=0.0, max=2.0, step=0.05, optional=True),
-                io.Int.Input("max_tokens", default=512, min=16, max=4096, optional=True),
+                io.Int.Input("max_tokens", default=256, min=16, max=4096, optional=True),
             ],
             outputs=[
                 io.Conditioning.Output(display_name="conditioning"),
@@ -195,6 +195,7 @@ class AzPromptEnhancer(io.ComfyNode):
                 "max_tokens": int(max_tokens),
                 "seed": int(seed),
                 "stream": False,
+                "cache_prompt": True,
                 "chat_template_kwargs": {"enable_thinking": False},
             }
             headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
