@@ -112,7 +112,6 @@ app.registerExtension({
       const connect = async () => {
         const url = (wUrl?.value || "").trim();
         const tok = (wTok?.value || "").trim();
-        if (!url || !tok) { setStatus("Set Server URL and API Token first.", true); setLight("off"); return; }
         btn.disabled = true;
         setLight("busy"); setStatus("Fetching models…");
         try {

@@ -175,7 +175,7 @@ class AzPromptEnhancer(io.ComfyNode):
                 io.String.Input("prompt", force_input=True),
                 io.Combo.Input("image_model", options=_MODEL_OPTIONS, default=_MODEL_OPTIONS[0]),
                 io.String.Input("llama_url", default=os.environ.get("LLAMA_URL", "")),
-                io.String.Input("llama_token", default=""),
+                io.String.Input("llama_token", default=os.environ.get("LLAMA_TOKEN", "")),
                 io.String.Input("llm_model", default=""),
                 io.Boolean.Input("unrestricted", default=True, label_on="Uncensored", label_off="SFW"),
                 io.Int.Input("seed", default=0, min=0, max=0xffffffffffffffff,
