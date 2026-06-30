@@ -209,6 +209,7 @@ class AzPromptEnhancer(io.ComfyNode):
             raise ValueError("Prompt Enhancer: no model selected. Click Connect and pick a model.")
 
         _notify(node_id, status="start")
+        full = ""
         try:
             body = {
                 "model": model,
@@ -219,24 +220,36 @@ class AzPromptEnhancer(io.ComfyNode):
                 "temperature": float(temperature),
                 "max_tokens": int(max_tokens),
                 "seed": int(seed),
-                "stream": False,
+                "stream": True,
                 "cache_prompt": True,
                 "chat_template_kwargs": {"enable_thinking": False},
             }
             headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
             resp = requests.post(url + "/v1/chat/completions", headers=headers,
-                                 data=json.dumps(body), timeout=(10, 300))
+                                 data=json.dumps(body), stream=True, timeout=(10, 300))
             if resp.status_code != 200:
                 raise RuntimeError(f"LLM HTTP {resp.status_code}: {resp.text[:300]}")
-            data = resp.json()
-            enhanced = _clean(data["choices"][0]["message"]["content"])
+            for line in resp.iter_lines(decode_unicode=True):
+                if not line or not line.startswith("data:"):
+                    continue
+                chunk = line[5:].strip()
+                if chunk == "[DONE]":
+                    break
+                try:
+                    delta = json.loads(chunk)["choices"][0]["delta"].get("content") or ""
+                except Exception:
+                    delta = ""
+                if delta:
+                    full += delta
+                    _notify(node_id, status="delta", text=delta)
+            enhanced = _clean(full)
             if not enhanced:
                 raise RuntimeError("LLM returned empty content.")
         except Exception as e:
             _notify(node_id, status="error", error=str(e))
             raise
 
-        _notify(node_id, status="done", text=enhanced)
+        _notify(node_id, status="done")
 
         tokens = clip.tokenize(enhanced)
         cond = clip.encode_from_tokens_scheduled(tokens)
