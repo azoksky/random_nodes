@@ -27,12 +27,17 @@ import { api } from "../../scripts/api.js";
   .azpe-status { font-size:11px; color:var(--descrip-text,#9ab); white-space:nowrap;
                  overflow:hidden; text-overflow:ellipsis; }
   .azpe-status.error { color:var(--error-text,#ff8a8a); }
-  .azpe-bar { position:relative; height:6px; border-radius:4px; overflow:hidden;
-              background:rgba(255,255,255,0.06); border:1px solid var(--border-color,#2b3242); }
-  .azpe-bar .azpe-fill { position:absolute; top:0; bottom:0; left:-35%; width:35%; opacity:0;
-              background:linear-gradient(90deg, rgba(60,120,255,0.1), rgba(90,160,255,0.95), rgba(60,120,255,0.1)); }
-  .azpe-bar.active .azpe-fill { opacity:1; animation:azpeSlide 1.05s ease-in-out infinite; }
-  @keyframes azpeSlide { 0%{left:-35%;} 100%{left:100%;} }
+  .azpe-bar { position:relative; height:8px; border-radius:5px; overflow:hidden;
+              background:rgba(255,255,255,0.06); border:1px solid var(--border-color,#2b3242);
+              opacity:0; transition:opacity .15s; }
+  .azpe-bar.busy { opacity:1; }
+  /* the stripe animation runs perpetually; we only toggle the bar's visibility,
+     so there is never a "did the animation start" timing problem. */
+  .azpe-bar .azpe-fill { position:absolute; top:0; bottom:0; left:0; width:200%;
+              background:repeating-linear-gradient(-45deg,
+                #3a78ff 0 14px, #1e3fb0 14px 28px);
+              animation:azpeMarch .7s linear infinite; }
+  @keyframes azpeMarch { from{ transform:translateX(0); } to{ transform:translateX(-40px); } }
   `;
   document.head.appendChild(css);
 })();
@@ -102,7 +107,7 @@ app.registerExtension({
         status.textContent = t || "";
         status.classList.toggle("error", !!isErr);
       };
-      const setBar = (on) => bar.classList.toggle("active", !!on);
+      const setBar = (on) => bar.classList.toggle("busy", !!on);
 
       sel.addEventListener("change", () => {
         if (wLlm) { wLlm.value = sel.value; }
@@ -148,19 +153,34 @@ app.registerExtension({
       };
       api.addEventListener("az_prompt_enhancer", handler);
 
-      // …but the animated bar is driven by ComfyUI's own executing event, which
-      // reliably brackets the (long) run of this node.
+      // …and also from ComfyUI's own executing event. detail can be a bare id
+      // string OR an object ({node, prompt_id}) depending on frontend version,
+      // so parse both. When it is this node -> busy; anything else / null -> idle.
+      const myId = () => String(this.id);
+      const parseId = (detail) => {
+        if (detail == null) return null;
+        const id = (typeof detail === "object") ? (detail.node ?? detail.id ?? detail.node_id) : detail;
+        return id == null ? null : String(id);
+      };
       const onExec = (ev) => {
-        const running = ev.detail != null && String(ev.detail) === String(this.id);
+        const id = parseId(ev.detail);
+        const running = id !== null && id === myId();
         setBar(running);
         if (running) setStatus("Enhancing prompt…");
       };
+      const onEnd = () => setBar(false);
       api.addEventListener("executing", onExec);
+      api.addEventListener("execution_success", onEnd);
+      api.addEventListener("execution_error", onEnd);
+      api.addEventListener("execution_interrupted", onEnd);
 
       const prevOnRemoved = this.onRemoved;
       this.onRemoved = function () {
         api.removeEventListener("az_prompt_enhancer", handler);
         api.removeEventListener("executing", onExec);
+        api.removeEventListener("execution_success", onEnd);
+        api.removeEventListener("execution_error", onEnd);
+        api.removeEventListener("execution_interrupted", onEnd);
         return prevOnRemoved ? prevOnRemoved.apply(this, arguments) : undefined;
       };
 
