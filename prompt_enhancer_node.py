@@ -27,6 +27,11 @@ try:
     from aiohttp import web
 except Exception:
     web = None
+try:
+    from comfy.model_management import InterruptProcessingException
+except Exception:
+    class InterruptProcessingException(Exception):
+        pass
 
 # Shared rewrite contract. Per-model guidance is appended from MODEL_GUIDES.
 _BASE_RULES = """You are an elite prompt engineer for the {model} text-to-image model.
@@ -147,6 +152,17 @@ def _notify(node_id, **data):
         pass
 
 
+# node_id -> True when the user pressed Stop mid-stream
+_STOP = {}
+# node_id -> (fingerprint, enhanced_text) of the last completed run
+_CACHE = {}
+
+
+def _fingerprint(model, image_model, raw, unrestricted, seed, temperature, max_tokens, url):
+    return (model, image_model, raw, bool(unrestricted), int(seed),
+            round(float(temperature), 4), int(max_tokens), url)
+
+
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 
@@ -208,8 +224,22 @@ class AzPromptEnhancer(io.ComfyNode):
         if not model:
             raise ValueError("Prompt Enhancer: no model selected. Click Connect and pick a model.")
 
+        # Reuse the previous result when nothing that affects the output changed.
+        fp = _fingerprint(model, image_model, raw, unrestricted, seed, temperature, max_tokens, url)
+        cached = _CACHE.get(node_id)
+        if cached and cached[0] == fp:
+            enhanced = cached[1]
+            _notify(node_id, status="start")
+            _notify(node_id, status="delta", text=enhanced)
+            _notify(node_id, status="done")
+            tokens = clip.tokenize(enhanced)
+            cond = clip.encode_from_tokens_scheduled(tokens)
+            return io.NodeOutput(cond, enhanced)
+
+        _STOP.pop(node_id, None)
         _notify(node_id, status="start")
         full = ""
+        stopped = False
         try:
             body = {
                 "model": model,
@@ -230,6 +260,9 @@ class AzPromptEnhancer(io.ComfyNode):
             if resp.status_code != 200:
                 raise RuntimeError(f"LLM HTTP {resp.status_code}: {resp.text[:300]}")
             for line in resp.iter_lines(decode_unicode=True):
+                if _STOP.get(node_id):
+                    stopped = True
+                    break
                 if not line or not line.startswith("data:"):
                     continue
                 chunk = line[5:].strip()
@@ -242,14 +275,26 @@ class AzPromptEnhancer(io.ComfyNode):
                 if delta:
                     full += delta
                     _notify(node_id, status="delta", text=delta)
+            try:
+                resp.close()
+            except Exception:
+                pass
+            if stopped:
+                _notify(node_id, status="done")
+                raise InterruptProcessingException()
             enhanced = _clean(full)
             if not enhanced:
                 raise RuntimeError("LLM returned empty content.")
+        except InterruptProcessingException:
+            raise
         except Exception as e:
             _notify(node_id, status="error", error=str(e))
             raise
+        finally:
+            _STOP.pop(node_id, None)
 
         _notify(node_id, status="done")
+        _CACHE[node_id] = (fp, enhanced)
 
         tokens = clip.tokenize(enhanced)
         cond = clip.encode_from_tokens_scheduled(tokens)
@@ -286,3 +331,14 @@ if PromptServer is not None and web is not None:
             return web.json_response({"ok": True, "models": ids})
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
+
+    @PromptServer.instance.routes.post("/az_prompt_enhancer/stop")
+    async def _az_pe_stop(request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        node_id = data.get("id")
+        if node_id is not None:
+            _STOP[str(node_id)] = True
+        return web.json_response({"ok": True})

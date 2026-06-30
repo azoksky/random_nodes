@@ -23,6 +23,7 @@ import { api } from "../../scripts/api.js";
               background:linear-gradient(180deg,#4f8bff,#2e63ec); }
   .azpe-btn:hover { filter:brightness(1.08); }
   .azpe-btn:disabled { opacity:.55; cursor:default; }
+  .azpe-btn.stop { border-color:#e0454a; background:linear-gradient(180deg,#ff5a5f,#d33a3f); }
   .azpe-preview { width:100%; box-sizing:border-box; height:220px; overflow-y:auto; overflow-x:hidden;
                   font-size:13px; line-height:1.55; padding:10px 12px; border-radius:8px;
                   border:1px solid var(--border-color,#2b3242); background:var(--comfy-input-bg,#171b24);
@@ -117,9 +118,20 @@ app.registerExtension({
         light.classList.remove("dim");
       };
       // single local source of truth: is THIS node the one executing?
+      let busy = false;
       const watch = setInterval(() => {
-        const busy = app.runningNodeId != null && String(app.runningNodeId) === String(this.id);
-        if (busy) startBlink(); else stopBlink();
+        const now = app.runningNodeId != null && String(app.runningNodeId) === String(this.id);
+        if (now === busy) return;
+        busy = now;
+        if (busy) {
+          startBlink();
+          btn.textContent = "Stop";
+          btn.classList.add("stop");
+        } else {
+          stopBlink();
+          btn.textContent = "Connect";
+          btn.classList.remove("stop");
+        }
       }, 150);
 
       // ---- autoscroll: glide only while pinned to bottom; releases on scroll-up ----
@@ -190,7 +202,11 @@ app.registerExtension({
           btn.disabled = false;
         }
       };
-      btn.addEventListener("click", connect);
+      const stop = async () => {
+        try { await api.fetchApi("/az_prompt_enhancer/stop", { method: "POST", body: JSON.stringify({ id: String(this.id) }) }); } catch (e) {}
+        try { await api.interrupt(); } catch (e) {}
+      };
+      btn.addEventListener("click", () => { if (busy) stop(); else connect(); });
 
       // ---- streamed text only (light is independent) ----
       const handler = (ev) => {
