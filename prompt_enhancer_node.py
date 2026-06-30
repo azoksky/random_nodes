@@ -17,7 +17,7 @@ import asyncio
 
 import requests
 
-from comfy_api.latest import io, ui
+from comfy_api.latest import io
 
 try:
     from server import PromptServer
@@ -118,7 +118,7 @@ class AzPromptEnhancer(io.ComfyNode):
                         "OpenAI-compatible LLM, then encode it to CONDITIONING.",
             inputs=[
                 io.Clip.Input("clip"),
-                io.String.Input("prompt", multiline=True, default=""),
+                io.String.Input("prompt", force_input=True),
                 io.Combo.Input("image_model", options=_MODEL_OPTIONS, default=_MODEL_OPTIONS[0]),
                 io.String.Input("llama_url", default=os.environ.get("LLAMA_URL", "")),
                 io.String.Input("llama_token", default=os.environ.get("LLAMA_TOKEN", "")),
@@ -185,7 +185,7 @@ class AzPromptEnhancer(io.ComfyNode):
 
         tokens = clip.tokenize(enhanced)
         cond = clip.encode_from_tokens_scheduled(tokens)
-        return io.NodeOutput(cond, enhanced, ui=ui.PreviewText(enhanced))
+        return io.NodeOutput(cond, enhanced)
 
 
 def _fetch_models_sync(url, token):

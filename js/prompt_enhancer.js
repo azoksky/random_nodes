@@ -46,11 +46,6 @@ import { api } from "../../scripts/api.js";
 
   .azpe-status { font-size:11px; min-height:14px; color:var(--descrip-text,#9ab); }
   .azpe-status.error { color:var(--error-text,#ff8a8a); }
-  .azpe-prev { width:100%; box-sizing:border-box; min-height:84px; max-height:220px; overflow:auto;
-               font-size:12px; line-height:1.45; padding:8px 9px; border-radius:8px;
-               border:1px solid var(--border-color,#2b3242); background:var(--comfy-input-bg,#171b24);
-               color:#cfe0f5; white-space:pre-wrap; }
-  .azpe-prev:empty::before { content:"Enhanced prompt preview will appear here."; color:#5d6678; }
   `;
   document.head.appendChild(css);
 })();
@@ -144,14 +139,12 @@ app.registerExtension({
       const bar = el("div", "azpe-bar");
       bar.append(el("div", "azpe-fill"));
       const status = el("div", "azpe-status");
-      const prev = el("div", "azpe-prev");
-      prev.textContent = this.properties?.last_preview || "";
 
-      card.append(head, fUrl, fTok, row, fImg, bar, status, prev);
+      card.append(head, fUrl, fTok, row, fImg, bar, status);
 
       const domW = this.addDOMWidget("azpe_ui", "Prompt Enhancer", card, { serialize: false });
       domW.serializeValue = () => undefined;
-      domW.computeSize = () => [this.size[0] - 20, 300];
+      domW.computeSize = () => [this.size[0] - 20, card.scrollHeight ? card.scrollHeight + 4 : 250];
       // float the card to the top of the node
       const i = this.widgets.indexOf(domW);
       if (i > 0) { this.widgets.splice(i, 1); this.widgets.unshift(domW); }
@@ -224,16 +217,8 @@ app.registerExtension({
         const d = ev.detail || {};
         if (String(d.id) !== String(this.id)) return;
         if (d.status === "start") { setBar(true); setStatus("Enhancing prompt…"); }
-        else if (d.status === "done") {
-          setBar(false); setStatus("");
-          if (typeof d.text === "string") {
-            prev.textContent = d.text;
-            this.properties = this.properties || {};
-            this.properties.last_preview = d.text;
-          }
-        } else if (d.status === "error") {
-          setBar(false); setStatus(d.error || "Error", true);
-        }
+        else if (d.status === "done") { setBar(false); setStatus("Done."); }
+        else if (d.status === "error") { setBar(false); setStatus(d.error || "Error", true); }
       };
       api.addEventListener("az_prompt_enhancer", handler);
 
@@ -243,7 +228,7 @@ app.registerExtension({
         return prevOnRemoved ? prevOnRemoved.apply(this, arguments) : undefined;
       };
 
-      this.size = [420, 560];
+      this.size = [400, 380];
       return r;
     };
   },
