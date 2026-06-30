@@ -35,13 +35,11 @@ import { api } from "../../scripts/api.js";
   .azpe-btn:hover { filter:brightness(1.08); }
   .azpe-btn:disabled { opacity:.55; cursor:default; }
 
-  .azpe-bar { position:relative; height:6px; border-radius:4px; overflow:hidden; opacity:0;
-              background:var(--comfy-input-bg,#1b1f2a); border:1px solid var(--border-color,#2b3242);
-              transition:opacity .2s; }
-  .azpe-bar.active { opacity:1; }
-  .azpe-bar .azpe-fill { position:absolute; top:0; bottom:0; left:-35%; width:35%;
+  .azpe-bar { position:relative; height:6px; border-radius:4px; overflow:hidden;
+              background:rgba(255,255,255,0.06); border:1px solid var(--border-color,#2b3242); }
+  .azpe-bar .azpe-fill { position:absolute; top:0; bottom:0; left:-35%; width:35%; opacity:0;
               background:linear-gradient(90deg, rgba(60,120,255,0.1), rgba(90,160,255,0.95), rgba(60,120,255,0.1)); }
-  .azpe-bar.active .azpe-fill { animation:azpeSlide 1.05s ease-in-out infinite; }
+  .azpe-bar.active .azpe-fill { opacity:1; animation:azpeSlide 1.05s ease-in-out infinite; }
   @keyframes azpeSlide { 0%{left:-35%;} 100%{left:100%;} }
 
   .azpe-status { font-size:11px; min-height:14px; color:var(--descrip-text,#9ab); }
@@ -68,12 +66,7 @@ app.registerExtension({
       this.serialize_widgets = true;
 
       const findW = (n) => this.widgets?.find((w) => w.name === n);
-      const hide = (w) => {
-        if (!w) return;
-        w.computeSize = () => [0, -4];
-        w.type = "hidden";
-        w.hidden = true;
-      };
+      const hide = (w) => { if (w) w.hidden = true; };
 
       const wUrl = findW("llama_url");
       const wTok = findW("llama_token");
@@ -144,10 +137,23 @@ app.registerExtension({
 
       const domW = this.addDOMWidget("azpe_ui", "Prompt Enhancer", card, { serialize: false });
       domW.serializeValue = () => undefined;
-      domW.computeSize = () => [this.size[0] - 20, card.scrollHeight ? card.scrollHeight + 4 : 250];
+      let cardH = 260;
+      domW.computeSize = () => [this.size[0] - 20, cardH];
       // float the card to the top of the node
       const i = this.widgets.indexOf(domW);
       if (i > 0) { this.widgets.splice(i, 1); this.widgets.unshift(domW); }
+
+      const fit = () => {
+        const h = card.offsetHeight;
+        if (h && Math.abs(h + 6 - cardH) > 2) {
+          cardH = h + 6;
+          const sz = this.computeSize();
+          this.setSize([Math.max(400, this.size[0]), sz[1]]);
+          this.setDirtyCanvas(true, true);
+        }
+      };
+      requestAnimationFrame(fit);
+      setTimeout(fit, 60);
 
       // ---- helpers ----
       const setLight = (state) => {
