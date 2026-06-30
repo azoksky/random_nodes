@@ -10,11 +10,10 @@ import { api } from "../../scripts/api.js";
   .azpe-ui { display:flex; flex-direction:column; gap:8px; width:100%; box-sizing:border-box; padding:2px 0; }
   .azpe-row { display:flex; align-items:center; gap:8px; width:100%; }
   .azpe-light { flex:0 0 auto; width:12px; height:12px; border-radius:50%; background:#e0454a;
-                box-shadow:0 0 6px rgba(224,69,74,.9); }
+                box-shadow:0 0 6px rgba(224,69,74,.9);
+                transition:opacity .18s ease, transform .18s ease; }
   .azpe-light.ok { background:#3ddc84; box-shadow:0 0 9px rgba(61,220,132,.95); }
-  .azpe-light.blink { animation:azpeBlink .9s ease-in-out infinite; }
-  @keyframes azpeBlink { 0%,100%{ opacity:1; transform:scale(1); }
-                         50%   { opacity:.2; transform:scale(.72); } }
+  .azpe-light.dim { opacity:.18; transform:scale(.7); }
   .azpe-sel { flex:1 1 auto; min-width:0; height:28px; border-radius:7px; padding:0 9px; font-size:12px;
               border:1px solid var(--border-color,#333); background:var(--comfy-input-bg,#1b1f2a);
               color:var(--input-text,#dfe8f7); box-sizing:border-box; }
@@ -91,11 +90,45 @@ app.registerExtension({
       if (li >= 0) this.widgets.splice(li + 1, 0, domW);
       else this.widgets.unshift(domW);
 
-      // ---- light: red(off) / green(ok) / green-blinking(busy) ----
-      const lightBusy = () => { light.classList.add("ok", "blink"); };
-      const lightOk   = () => { light.classList.add("ok"); light.classList.remove("blink"); };
-      const lightErr  = () => { light.classList.remove("ok", "blink"); };
-      const lightStop = () => light.classList.remove("blink");
+      // ---- light: red(off) / green(ok) / green slow-blink(busy) ----
+      // Blink is a self-driven 300ms-gated loop. `injob` rejects overlapping
+      // toggles, so calling lightBusy() on every delta cannot speed it up.
+      let blinking = false;   // desired state: should it be pulsing?
+      let injob = false;      // a phase toggle is in progress (the gate)
+      let phaseOn = false;    // current dim phase
+      let blinkTimer = null;
+
+      const blinkLoop = () => {
+        blinkTimer = null;
+        if (injob) return;            // a toggle already pending -> reject
+        injob = true;
+        if (!blinking) {              // stopped: settle to solid, release gate
+          phaseOn = false;
+          light.classList.remove("dim");
+          injob = false;
+          return;
+        }
+        phaseOn = !phaseOn;
+        light.classList.toggle("dim", phaseOn);
+        // hold this phase for ~300ms, then release the gate and schedule next
+        blinkTimer = setTimeout(() => { injob = false; blinkLoop(); }, 300);
+      };
+
+      const lightBusy = () => {
+        light.classList.add("ok");
+        if (blinking) return;         // already pulsing -> ignore repeat calls
+        blinking = true;
+        if (!injob && !blinkTimer) blinkLoop();
+      };
+      const stopBlink = () => {
+        blinking = false;
+        if (blinkTimer) { clearTimeout(blinkTimer); blinkTimer = null; }
+        injob = false;
+        phaseOn = false;
+        light.classList.remove("dim");
+      };
+      const lightOk  = () => { stopBlink(); light.classList.add("ok"); };
+      const lightErr = () => { stopBlink(); light.classList.remove("ok"); };
 
       // ---- gentle eased autoscroll (webchat-style, unconditional) ----
       let _anim = false;
@@ -183,7 +216,7 @@ app.registerExtension({
         return id == null ? null : String(id);
       };
       const onExec = (ev) => { if (parseId(ev.detail) === String(this.id)) lightBusy(); };
-      const onEnd  = () => lightStop();
+      const onEnd  = () => stopBlink();
       api.addEventListener("executing", onExec);
       api.addEventListener("execution_success", onEnd);
       api.addEventListener("execution_error", onEnd);
@@ -191,6 +224,7 @@ app.registerExtension({
 
       const prevOnRemoved = this.onRemoved;
       this.onRemoved = function () {
+        if (blinkTimer) { clearTimeout(blinkTimer); blinkTimer = null; }
         api.removeEventListener("az_prompt_enhancer", handler);
         api.removeEventListener("executing", onExec);
         api.removeEventListener("execution_success", onEnd);
