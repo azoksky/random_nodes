@@ -15,6 +15,7 @@ from .krea2_rebalance_node import AzKrea2ProjectorRebalance
 from .krea2_gated_rebalance_node import AzKrea2GatedRebalance
 from .gated_lora_node import AzGatedLoraLoader
 from .gated_lora_sampler_node import AzGatedLoraSampler
+from .prompt_enhancer_node import AzPromptEnhancer
 
 
 class RandomNodesExtension(ComfyExtension):
@@ -35,6 +36,7 @@ class RandomNodesExtension(ComfyExtension):
             AzKrea2GatedRebalance,
             AzGatedLoraLoader,
             AzGatedLoraSampler,
+            AzPromptEnhancer,
         ]
 
 
