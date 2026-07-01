@@ -66,6 +66,7 @@ app.registerExtension({
       const wDev = findW("device");
       const wPort = findW("port");
       const wModel = findW("llm_model");
+      const wMmproj = findW("mmproj_file");
 
       // ---- UI ----
       const ui = el("div", "azll-ui");
@@ -88,6 +89,19 @@ app.registerExtension({
       const refBtn = el("button", "azll-btn mini", "↻");
       mRow.append(sel, refBtn);
 
+      const pRow = el("div", "azll-row");
+      const pLbl = el("span", null, "mmproj");
+      pLbl.style.cssText = "flex:0 0 auto;font-size:11px;color:#8fa4bd;";
+      const mmSel = el("select", "azll-sel");
+      const mmNone = el("option", null, "— none (text only) —");
+      mmNone.value = "";
+      mmSel.append(mmNone);
+      if (wMmproj?.value) {
+        const o = el("option", null, wMmproj.value);
+        o.value = wMmproj.value; o.selected = true; mmSel.append(o);
+      }
+      pRow.append(pLbl, mmSel);
+
       const lRow = el("div", "azll-row");
       const runLight = el("span", "azll-light");
       const runBtn = el("button", "azll-btn", "Launch");
@@ -95,7 +109,7 @@ app.registerExtension({
 
       const consoleBox = el("div", "azll-console");
       const preview = el("div", "azll-preview");
-      ui.append(dlRow, mRow, lRow, consoleBox, preview);
+      ui.append(dlRow, mRow, pRow, lRow, consoleBox, preview);
 
       // serialize=false as a real property (core-node pattern); DOM widget stays
       // last in this.widgets so LiteGraph's sparse-save / compacted-load can't
@@ -164,6 +178,14 @@ app.registerExtension({
           sel.value = d.models.includes(prev) ? prev : d.models[0];
           sel.disabled = false;
           if (wModel) wModel.value = sel.value;
+
+          const prevMm = wMmproj?.value || "";
+          mmSel.innerHTML = "";
+          const none = el("option", null, "— none (text only) —"); none.value = ""; mmSel.append(none);
+          (d.mmprojs || []).forEach((m) => { const o = el("option", null, m); o.value = m; mmSel.append(o); });
+          mmSel.value = (d.mmprojs || []).includes(prevMm) ? prevMm : "";
+          if (wMmproj) wMmproj.value = mmSel.value;
+
           this.setDirtyCanvas(true, true);
         } catch (e) { logLine("refresh error: " + e); }
       };
@@ -178,7 +200,7 @@ app.registerExtension({
         runBtn.disabled = true;
         try {
           await api.fetchApi("/az_llama/launch", {
-            method: "POST", body: JSON.stringify({ ...payload(), model: sel.value }) });
+            method: "POST", body: JSON.stringify({ ...payload(), model: sel.value, mmproj: mmSel.value }) });
         } catch (e) { logLine("launch error: " + e); runBtn.disabled = false; }
       };
 
@@ -191,6 +213,7 @@ app.registerExtension({
       };
 
       sel.addEventListener("change", () => { if (wModel) wModel.value = sel.value; this.setDirtyCanvas(true, true); });
+      mmSel.addEventListener("change", () => { if (wMmproj) wMmproj.value = mmSel.value; this.setDirtyCanvas(true, true); });
       dlBtn.addEventListener("click", download);
       refBtn.addEventListener("click", refresh);
       runBtn.addEventListener("click", () => { if (running) stop(); else launch(); });
@@ -240,6 +263,12 @@ app.registerExtension({
             const o2 = el("option", null, wModel.value); o2.value = wModel.value; sel.append(o2);
           }
           sel.value = wModel.value;
+        }
+        if (wMmproj && mmSel && wMmproj.value) {
+          if (![...mmSel.options].some((op) => op.value === wMmproj.value)) {
+            const o3 = el("option", null, wMmproj.value); o3.value = wMmproj.value; mmSel.append(o3);
+          }
+          mmSel.value = wMmproj.value;
         }
       };
 
