@@ -428,4 +428,5 @@ if PromptServer is not None and web is not None:
             with _ENGINE_LOCK:
                 _stop_engine()
             _console("engine stopped")
+            _notify("stopped")
         return web.json_response({"ok": True})

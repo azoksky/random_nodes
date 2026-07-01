@@ -187,6 +187,7 @@ app.registerExtension({
           method: "POST", body: JSON.stringify({ id: String(this.id), kill_engine: true }) }); }
         catch (e) {}
         try { await api.interrupt(); } catch (e) {}
+        setRunning(false);
       };
 
       sel.addEventListener("change", () => { if (wModel) wModel.value = sel.value; this.setDirtyCanvas(true, true); });
@@ -208,6 +209,7 @@ app.registerExtension({
           if (d.ok) setRunning(true, d.model); else { setRunning(false); logLine("launch: " + (d.error || "failed")); }
           return;
         }
+        if (d.chan === "stopped") { setRunning(false); return; }
         if (d.chan === "gen") {
           if (d.status === "start") reset();
           else if (d.status === "delta") { if (d.text) feed(d.text); }
