@@ -151,15 +151,19 @@ def _download_extract(url, bindir):
 
     os.makedirs(bindir, exist_ok=True)
     zip_path = os.path.join(bindir, "llama-bin.zip")
-    _console(f"downloading {url}")
+    token = os.environ.get("HF_TOKEN", "").strip() if "huggingface.co" in url else ""
+    _console(f"downloading {url}" + (" (auth)" if token else ""))
     if shutil.which("aria2c"):
-        rc = subprocess.run(
-            ["aria2c", "-c", "-x4", "-s4", "--quiet", "-d", bindir,
-             "-o", "llama-bin.zip", url]).returncode
+        cmd = ["aria2c", "-c", "-x4", "-s4", "--quiet", "-d", bindir, "-o", "llama-bin.zip"]
+        if token:
+            cmd.append(f"--header=Authorization: Bearer {token}")
+        rc = subprocess.run(cmd + [url]).returncode
         if rc != 0:
-            raise RuntimeError(f"aria2c failed rc={rc}")
+            hint = " (HTTP auth failed - set HF_TOKEN)" if rc == 24 else ""
+            raise RuntimeError(f"aria2c failed rc={rc}{hint}")
     else:
-        with requests.get(url, stream=True, timeout=(10, 600)) as r:
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        with requests.get(url, stream=True, timeout=(10, 600), headers=headers) as r:
             r.raise_for_status()
             with open(zip_path, "wb") as f:
                 for chunk in r.iter_content(1 << 20):
