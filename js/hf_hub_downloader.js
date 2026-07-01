@@ -30,9 +30,19 @@ function injectCSSOnce() {
      .az-btn-secondary{background:var(--comfy-input-bg,#333);color:var(--input-text,#ddd)}\
      .az-flex{display:flex;gap:8px;align-items:center;justify-content:center;width:100%}\
      .az-progress{width:100%;height:12px;border:1px solid var(--border-color,#666);border-radius:6px;background:var(--comfy-input-bg,#222);overflow:hidden;display:none}\
-     .az-progress .bar{position:relative;height:100%;width:40%;background:linear-gradient(var(--p-primary-color,#9ec7ff),var(--p-primary-color,#4b90ff));animation:az-hf-indeterminate 1.2s infinite ease}\
+     .az-progress .bar{position:relative;height:100%;width:40%;background:linear-gradient(var(--p-primary-color,#9ec7ff),var(--p-primary-color,#4b90ff))}\
+     .az-progress.indet .bar{animation:az-hf-indeterminate 1.2s infinite ease}\
+     .az-progress.det .bar{transition:width .3s ease}\
      @keyframes az-hf-indeterminate{0%{transform:translateX(-100%);width:40%}50%{transform:translateX(50%);width:60%}100%{transform:translateX(200%);width:40%}}";
   document.head.appendChild(style);
+}
+
+function fmtBytes(n) {
+  n = Number(n) || 0;
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (i === 0 ? n.toFixed(0) : n.toFixed(1)) + " " + u[i];
 }
 
 function fmtDuration(sec) {
@@ -373,6 +383,28 @@ app.registerExtension({
         downloadBtn.disabled = on;
         stopBtn.disabled = !on;
         progress.style.display = on ? "block" : "none";
+        if (on) {
+          progress.classList.add("indet");
+          progress.classList.remove("det");
+          bar.style.width = "40%";
+        }
+      };
+
+      const setProgress = (s) => {
+        const total = Number(s.total) || 0;
+        const done = Number(s.downloaded) || 0;
+        if (total > 0) {
+          const pct = Math.max(0, Math.min(100, (done / total) * 100));
+          progress.classList.remove("indet");
+          progress.classList.add("det");
+          bar.style.width = pct.toFixed(1) + "%";
+          const eta = s.eta != null ? " · ETA " + fmtDuration(s.eta) : "";
+          statusEl.textContent =
+            pct.toFixed(1) + "% · " + fmtBytes(done) + " / " + fmtBytes(total) +
+            " · " + fmtBytes(s.speed) + "/s" + eta;
+        } else {
+          statusEl.textContent = s.msg || s.state || "running";
+        }
       };
 
       const startElapsed = () => {
@@ -405,14 +437,15 @@ app.registerExtension({
               stopElapsed();
               return;
             }
-            statusEl.textContent = s.msg || s.state || "running";
             if (s.state === "done" || s.state === "error" || s.state === "stopped") {
+              statusEl.textContent = s.msg || s.state || "running";
               this.gid = null;
               setDownloading(false);
               stopElapsed();
               return;
             }
-            this._pollTimer = setTimeout(poll, 900);
+            setProgress(s);
+            this._pollTimer = setTimeout(poll, 500);
           } catch (e) {
             this._pollTimer = setTimeout(poll, 1100);
           }
