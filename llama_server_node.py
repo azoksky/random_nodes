@@ -272,7 +272,10 @@ def _drain(proc):
             _console(line)
 
 
-def _launch(models_dir, model, flags, device, port, bindir, mmproj=""):
+_MMPROJ_FLAGS = ("--mmproj", "-mm", "--mmproj-url")
+
+
+def _launch(models_dir, model, flags, device, port, bindir):
     with _ENGINE_LOCK:
         libdir = _ENGINE.get("libdir")
         if not libdir or not os.path.exists(os.path.join(libdir, "llama-server")):
@@ -281,24 +284,16 @@ def _launch(models_dir, model, flags, device, port, bindir, mmproj=""):
         if not os.path.exists(server):
             _notify("launch", ok=False, error="binary not downloaded")
             return
-        mdir = (models_dir or DEFAULT_MODELS_DIR).strip()
-        path = os.path.join(mdir, model)
+        path = os.path.join((models_dir or DEFAULT_MODELS_DIR).strip(), model)
         if not os.path.exists(path):
             _notify("launch", ok=False, error=f"model not found: {path}")
             return
-        mmproj = (mmproj or "").strip()
-        mmproj_path = os.path.join(mdir, mmproj) if mmproj else ""
-        if mmproj and not os.path.exists(mmproj_path):
-            _notify("launch", ok=False, error=f"mmproj not found: {mmproj_path}")
-            return
         _stop_engine()
         port = int(port or DEFAULT_PORT)
-        # Everything but host/port/alias/mmproj comes straight from the flag box.
+        # host/port/alias are ours; everything else (incl. --mmproj) is the flag box.
         args = _prep_flags(flags, device)
         cmd = [server, "-m", path, "--host", "127.0.0.1", "--port", str(port),
                "--alias", model] + args
-        if mmproj_path:
-            cmd += ["--mmproj", mmproj_path]
         env = {**os.environ, "LD_LIBRARY_PATH": libdir, **_device_env(device)}
         _console(f"launch: {' '.join(cmd)}  [dev={device}]")
         try:
@@ -307,8 +302,9 @@ def _launch(models_dir, model, flags, device, port, bindir, mmproj=""):
         except Exception as e:
             _notify("launch", ok=False, error=str(e))
             return
+        has_mm = any(t in _MMPROJ_FLAGS for t in args)
         _ENGINE.update(proc=proc, model=model, port=port, libdir=libdir,
-                       mmproj=(mmproj if mmproj_path else None))
+                       mmproj=(True if has_mm else None))
     threading.Thread(target=_drain, args=(proc,), daemon=True).start()
 
     for _ in range(240):
@@ -350,7 +346,6 @@ class AzLlamaEnhancer(io.ComfyNode):
                 io.String.Input("models_dir", default=DEFAULT_MODELS_DIR),
                 io.String.Input("launch_flags", default=DEFAULT_FLAGS, multiline=True),
                 io.String.Input("llm_model", default=""),
-                io.String.Input("mmproj_file", default=""),
                 io.Boolean.Input("unrestricted", default=True, label_on="Uncensored", label_off="SFW"),
                 io.Int.Input("seed", default=0, min=0, max=0xffffffffffffffff,
                              control_after_generate=True),
@@ -365,7 +360,7 @@ class AzLlamaEnhancer(io.ComfyNode):
     @classmethod
     def execute(cls, prompt=None, image=None, image_model=_MODEL_OPTIONS[0], device="default",
                 binary_url="", models_dir=DEFAULT_MODELS_DIR, launch_flags=DEFAULT_FLAGS,
-                llm_model="", mmproj_file="", unrestricted=True, seed=0,
+                llm_model="", unrestricted=True, seed=0,
                 temperature=0.6, max_tokens=256, port=DEFAULT_PORT):
         node_id = cls.hidden.unique_id
         raw = (prompt or "").strip()
@@ -381,7 +376,8 @@ class AzLlamaEnhancer(io.ComfyNode):
             raise RuntimeError(f"Local Enhancer: loaded model is '{_ENGINE.get('model')}', "
                                f"selected '{model}'. Relaunch to switch.")
         if has_image and not _ENGINE.get("mmproj"):
-            raise RuntimeError("Local Enhancer: image input needs a vision model. Pick an mmproj and relaunch.")
+            raise RuntimeError("Local Enhancer: image input needs a projector. Add --mmproj <path> to the "
+                               "launch flags and relaunch.")
         port = int(_ENGINE.get("port") or port)
 
         img_uri = ""
@@ -533,7 +529,7 @@ if PromptServer is not None and web is not None:
         def _run():
             _launch(data.get("models_dir"), model, data.get("launch_flags"),
                     data.get("device") or "default", data.get("port") or DEFAULT_PORT,
-                    data.get("bin_dir"), data.get("mmproj") or "")
+                    data.get("bin_dir"))
 
         threading.Thread(target=_run, daemon=True).start()
         return web.json_response({"ok": True, "status": "launching"})
