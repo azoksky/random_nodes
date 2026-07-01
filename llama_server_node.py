@@ -54,7 +54,8 @@ except Exception:
 DEFAULT_MODELS_DIR = "/kaggle/pamel/models/large_lms"
 DEFAULT_BIN_DIR = "/kaggle/tmp"
 DEFAULT_PORT = 18081
-DEFAULT_FLAGS = "-ngl 999 -c 4096 -fa on --jinja -np 1 --no-webui -cram 2048 -ctk q8_0 -ctv q8_0"
+DEFAULT_FLAGS = ("-ngl 999 -c 4096 -fa on --jinja -np 1 --slots --metrics "
+                 "--no-webui -cram 2048 -ctk q8_0 -ctv q8_0")
 
 # Managed singleton engine (one llama-server for this process).
 _ENGINE = {"proc": None, "model": None, "port": None, "libdir": None, "mmproj": None}
@@ -143,14 +144,30 @@ def _encode_image(image):
 
 _IMG_ONLY_RULES = """
 
-TASK - IMAGE TO PROMPT (no text idea was supplied):
-The image itself is your brief. Reverse-engineer it into the prompt that would have produced it, then
-write that prompt. Account for every prominent thing a viewer notices first and work down to the
-supporting detail: the subject(s) and their identity, gender, age and count; pose, action and the way
-they relate to each other; wardrobe; the setting and background; props and their materials; the palette;
-the light and mood; and the camera - shot size, angle, lens feel and depth of field. Read attributes off
-the pixels rather than assuming them. Claim nothing that is not visible and drop nothing that is
-prominent. Write it as a forward generation prompt, never as commentary about a picture you were shown."""
+TASK - IMAGE TO PROMPT (faithful reconstruction; no text idea was supplied):
+The image is your only brief and your goal is FIDELITY: someone who reads your prompt and renders it should
+get back a picture nearly indistinguishable from this one. You are extracting, not summarising.
+
+Work in two silent passes before you write a single word:
+1. INVENTORY every distinct element in the frame - foreground and background, large and tiny, sharp and
+   blurred: people, animals, plants, water, terrain, sky, buildings, vehicles, objects, visible text.
+   Miss nothing; a small bird perched at the edge counts as much as the main subject. Lock the exact count
+   of each kind (say "three deer", never "some deer").
+2. For EACH element, read off: what it is; its defining traits (colour, material, texture, age, species,
+   condition, expression, and pose or motion); its SIZE, both absolute and relative to its neighbours; its
+   POSITION in the frame (left / centre / right, foreground / midground / background, high / low); and its
+   SPATIAL RELATION to the others (in front of, behind, beside, above, overlapping, roughly how far apart,
+   and which way it faces). Depth order and placement matter as much as the objects themselves - they are
+   what make the reconstruction line up with the original.
+
+Then capture the whole scene: the compositional layout and how the eye travels it; the camera (shot size,
+angle, lens character, depth of field, any perspective); the lighting (direction, hardness, time of day,
+where the shadows fall); the colour palette; the atmosphere or weather; and the medium or style. Read every
+attribute straight off the pixels - never assume, never invent, never omit something clearly visible.
+Completeness OUTRANKS brevity here: disregard any word-count guidance given above and take exactly the room
+you need to place every element correctly, while keeping each clause plain, literal and concrete. Order the
+description from the dominant elements outward to the supporting ones. Write it as a forward generation
+prompt, never as commentary about a photo you were shown."""
 
 _IMG_TEXT_RULES = """
 
@@ -159,8 +176,9 @@ Treat the image as the base layer of a scene and the text as an override layer l
 single scene that results once the text is applied over the image.
 
 Resolve it concept by concept:
-1. Decompose the image into concepts - subject identity, gender, age and count; pose and action; wardrobe;
-   setting and background; props; style or medium; lighting; palette; framing.
+1. Decompose the image with the SAME exhaustive read you would use to reconstruct it: every subject,
+   animal, object and background feature, each with its attributes, count, size, position and spatial
+   relations - plus the global style, lighting, palette and framing. Nothing skipped.
 2. For each concept, check whether the text speaks to it. If it does, the text's version REPLACES the
    image's and the image's is discarded. If the text is silent, KEEP the image's version verbatim.
    Anything the text names that has no counterpart in the image is ADDED.
@@ -192,6 +210,29 @@ def _build_system_local(model, unrestricted, mode):
     elif mode == "image_text":
         base += _IMG_TEXT_RULES.format(model=model)
     return base
+
+
+def _fetch_stats(port):
+    """Generation speed from /metrics (needs --metrics) and KV occupancy from
+    /slots (needs --slots). Returns (tokens_per_sec, n_past, n_ctx), any None."""
+    tps = n_past = n_ctx = None
+    try:
+        txt = requests.get(f"http://127.0.0.1:{port}/metrics", timeout=2).text
+        for line in txt.splitlines():
+            if line.startswith("llamacpp:predicted_tokens_seconds"):
+                tps = round(float(line.split()[-1]), 1)
+                break
+    except Exception:
+        pass
+    try:
+        data = requests.get(f"http://127.0.0.1:{port}/slots", timeout=2).json()
+        slots = data.get("value") if isinstance(data, dict) else data
+        if slots:
+            n_past = int(slots[0].get("n_past", 0))
+            n_ctx = int(slots[0].get("n_ctx", 0))
+    except Exception:
+        pass
+    return tps, n_past, n_ctx
 
 
 def _engine_alive():
@@ -416,6 +457,8 @@ class AzLlamaEnhancer(io.ComfyNode):
         _notify("gen", status="start")
         full = ""
         stopped = False
+        tok = 0
+        t_first = None
         try:
             body = {
                 "model": model,
@@ -449,6 +492,9 @@ class AzLlamaEnhancer(io.ComfyNode):
                 except Exception:
                     delta = ""
                 if delta:
+                    if t_first is None:
+                        t_first = time.time()
+                    tok += 1
                     full += delta
                     _notify("gen", status="delta", text=delta)
             try:
@@ -470,6 +516,15 @@ class AzLlamaEnhancer(io.ComfyNode):
             _STOP.pop(node_id, None)
 
         _notify("gen", status="done")
+
+        # Update the readout after inference, before the value flows downstream.
+        tps, n_past, n_ctx = _fetch_stats(port)
+        if tps is None and t_first is not None:
+            dt = time.time() - t_first
+            if dt > 0:
+                tps = round(tok / dt, 1)
+        _notify("stats", tps=tps, n_past=n_past, n_ctx=n_ctx)
+
         _CACHE[node_id] = (fp, enhanced)
         return io.NodeOutput(enhanced)
 

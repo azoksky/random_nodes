@@ -29,6 +29,9 @@ import { api } from "../../scripts/api.js";
                   padding:5px 7px; border-radius:6px; border:1px solid var(--border-color,#2b3242);
                   background:#0d1017; color:#8fa4bd; white-space:pre-wrap; word-break:break-all; }
   .azll-console:empty::before { content:"llama-server console…"; color:#3f4757; }
+  .azll-stats { width:100%; box-sizing:border-box; display:none; gap:16px; padding:3px 5px;
+                font-size:11px; color:#7f93ab; font-family:ui-monospace,Consolas,monospace; }
+  .azll-stats b { color:#3ddc84; font-weight:600; }
   .azll-preview { width:100%; box-sizing:border-box; height:180px; overflow-y:auto; overflow-x:hidden;
                   font-size:13px; line-height:1.55; padding:10px 12px; border-radius:8px;
                   border:1px solid var(--border-color,#2b3242); background:var(--comfy-input-bg,#171b24);
@@ -94,15 +97,16 @@ app.registerExtension({
       lRow.append(runLight, runBtn);
 
       const consoleBox = el("div", "azll-console");
+      const statsBar = el("div", "azll-stats");
       const preview = el("div", "azll-preview");
-      ui.append(dlRow, mRow, lRow, consoleBox, preview);
+      ui.append(dlRow, mRow, lRow, consoleBox, statsBar, preview);
 
       // serialize=false as a real property (core-node pattern); DOM widget stays
       // last in this.widgets so LiteGraph's sparse-save / compacted-load can't
       // shift the other widget values into the wrong fields.
       const domW = this.addDOMWidget("azll_ui", "Local llama", ui);
       domW.serialize = false;
-      domW.computeSize = () => [this.size[0] - 20, 452];
+      domW.computeSize = () => [this.size[0] - 20, 476];
 
       // ---- console append (ring-buffered by CSS scroll) ----
       const logLine = (t) => {
@@ -210,6 +214,13 @@ app.registerExtension({
           return;
         }
         if (d.chan === "stopped") { setRunning(false); return; }
+        if (d.chan === "stats") {
+          const t = d.tps != null ? d.tps : "—";
+          const ctx = (d.n_past != null && d.n_ctx != null) ? `${d.n_past} / ${d.n_ctx}` : "—";
+          statsBar.innerHTML = `⚡ <b>${t}</b> t/s&nbsp;&nbsp;·&nbsp;&nbsp;ctx <b>${ctx}</b>`;
+          statsBar.style.display = "flex";
+          return;
+        }
         if (d.chan === "gen") {
           if (d.status === "start") reset();
           else if (d.status === "delta") { if (d.text) feed(d.text); }
