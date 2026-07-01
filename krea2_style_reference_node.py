@@ -1,5 +1,6 @@
 import hashlib
 
+import torch
 import comfy
 import node_helpers
 from comfy_api.latest import io
@@ -63,6 +64,30 @@ def _scale_for_vision(image, megapixels):
     return s.movedim(1, -1)
 
 
+def _crop_to_mask(image, mask):
+    # image: [B,H,W,C] float 0-1. mask: [B,H,W] (or [H,W]) float 0-1.
+    # Crop to the mask's bounding box so the vision encoder only "sees" the masked
+    # region -- same convention as the native TextEncodeQwenImageEditPlus mask path.
+    if mask is None:
+        return image
+    m = mask
+    if m.dim() == 2:
+        m = m.unsqueeze(0)
+    b, h, w, c = image.shape
+    if m.shape[-2:] != (h, w):
+        m = comfy.utils.common_upscale(m.unsqueeze(1), w, h, "bilinear", "disabled").squeeze(1)
+    sel = m[0] > 0.5
+    rows = torch.any(sel, dim=1)
+    cols = torch.any(sel, dim=0)
+    if not rows.any() or not cols.any():
+        return image  # empty mask -> use the whole image
+    ys = torch.where(rows)[0]
+    xs = torch.where(cols)[0]
+    y0, y1 = int(ys[0]), int(ys[-1])
+    x0, x1 = int(xs[0]), int(xs[-1])
+    return image[:, y0:y1 + 1, x0:x1 + 1, :]
+
+
 def _sig(t):
     # Cheap, stable signature of a small tensor for cache keying.
     t = t.detach().to("cpu", copy=False).contiguous()
@@ -88,8 +113,12 @@ class AzKrea2StyleReference(io.ComfyNode):
                                 tooltip="Describes the CONTENT to generate. The reference supplies "
                                         "only the style."),
                 io.Image.Input("style_image", tooltip="Primary style reference."),
+                io.Mask.Input("style_mask", optional=True,
+                              tooltip="Optional mask for style_image. Only the masked region (cropped to "
+                                      "its bounding box) is sent to the vision encoder."),
                 io.Image.Input("style_image2", optional=True, tooltip="Optional second reference to blend."),
-                io.Image.Input("style_image3", optional=True, tooltip="Optional third reference to blend."),
+                io.Mask.Input("style_mask2", optional=True,
+                              tooltip="Optional mask for style_image2 (same behaviour as style_mask)."),
                 io.Float.Input("style_strength", default=1.0, min=0.0, max=2.0, step=0.05,
                                tooltip="Overall conditioning strength honoured by the sampler. "
                                        "1.0 = neutral; lower for a looser influence, higher to push harder."),
@@ -108,16 +137,17 @@ class AzKrea2StyleReference(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, clip, prompt, style_image, style_image2=None, style_image3=None,
-                style_strength=1.0, vision_megapixels=0.5, system_prompt=""):
+    def execute(cls, clip, prompt, style_image, style_mask=None, style_image2=None,
+                style_mask2=None, style_strength=1.0, vision_megapixels=0.5, system_prompt=""):
         if clip is None:
             raise ValueError("Krea2 Style Reference: no CLIP. Load one with type 'krea2'.")
 
-        refs = [img for img in (style_image, style_image2, style_image3) if img is not None]
+        pairs = [(style_image, style_mask), (style_image2, style_mask2)]
+        refs = [(img, msk) for img, msk in pairs if img is not None]
         if not refs:
             raise ValueError("Krea2 Style Reference: connect at least one style_image.")
 
-        images_vl = [_scale_for_vision(img, vision_megapixels) for img in refs]
+        images_vl = [_scale_for_vision(_crop_to_mask(img, msk), vision_megapixels) for img, msk in refs]
 
         system = (system_prompt or "").strip() or _STYLE_SYSTEM
         scaffold = "".join(f"Style reference {i + 1}: {_VISION_BLOCK}\n" for i in range(len(images_vl)))
