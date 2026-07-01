@@ -218,6 +218,24 @@ app.registerExtension({
       };
       api.addEventListener("az_prompt_enhancer", handler);
 
+      // Robust widget persistence: LiteGraph's positional widgets_values restore
+      // shifts values into the wrong fields when force_input / control_after_generate
+      // / DOM widgets are mixed. Save by name and re-apply by name after configure.
+      const prevSerialize = this.onSerialize;
+      this.onSerialize = function (o) {
+        if (prevSerialize) prevSerialize.apply(this, arguments);
+        o.az_wv = {};
+        for (const w of this.widgets || [])
+          if (w && w.name && w.serialize !== false) o.az_wv[w.name] = w.value;
+      };
+      const prevConfigure = this.onConfigure;
+      this.onConfigure = function (o) {
+        if (prevConfigure) prevConfigure.apply(this, arguments);
+        if (o && o.az_wv)
+          for (const w of this.widgets || [])
+            if (w && w.name && w.name in o.az_wv) w.value = o.az_wv[w.name];
+      };
+
       const prevOnRemoved = this.onRemoved;
       this.onRemoved = function () {
         clearInterval(watch);
