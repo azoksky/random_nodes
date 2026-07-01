@@ -81,14 +81,13 @@ app.registerExtension({
       const preview = el("div", "azpe-preview");
       ui.append(row, preview);
 
-      const domW = this.addDOMWidget("azpe_ui", "Prompt Enhancer", ui, { serialize: false });
-      domW.serializeValue = () => undefined;
+      // Keep this DOM widget LAST in this.widgets and mark serialize=false the
+      // way core nodes do. LiteGraph saves widgets_values by sparse index but
+      // restores with a compacted counter, so a serialize:false widget anywhere
+      // but the end shifts every value after it into the wrong field.
+      const domW = this.addDOMWidget("azpe_ui", "Prompt Enhancer", ui);
+      domW.serialize = false;
       domW.computeSize = () => [this.size[0] - 20, 272];
-      const di = this.widgets.indexOf(domW);
-      if (di >= 0) this.widgets.splice(di, 1);
-      const li = wLlm ? this.widgets.indexOf(wLlm) : -1;
-      if (li >= 0) this.widgets.splice(li + 1, 0, domW);
-      else this.widgets.unshift(domW);
 
       // ---- base light colour (connection state) ----
       const lightOk  = () => light.classList.add("ok");

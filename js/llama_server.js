@@ -97,8 +97,11 @@ app.registerExtension({
       const preview = el("div", "azll-preview");
       ui.append(dlRow, mRow, lRow, consoleBox, preview);
 
-      const domW = this.addDOMWidget("azll_ui", "Local llama", ui, { serialize: false });
-      domW.serializeValue = () => undefined;
+      // serialize=false as a real property (core-node pattern); DOM widget stays
+      // last in this.widgets so LiteGraph's sparse-save / compacted-load can't
+      // shift the other widget values into the wrong fields.
+      const domW = this.addDOMWidget("azll_ui", "Local llama", ui);
+      domW.serialize = false;
       domW.computeSize = () => [this.size[0] - 20, 452];
 
       // ---- console append (ring-buffered by CSS scroll) ----
