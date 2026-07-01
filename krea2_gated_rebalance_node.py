@@ -21,7 +21,7 @@ from comfy_api.latest import io
 N_LAYERS = 12
 
 
-def _scale_conditioning(conditioning, gains, multiplier):
+def _scale_conditioning(conditioning, gains, multiplier, clamp=0.0):
     g = gains.reshape(N_LAYERS)
     out = []
     for t, d in conditioning:
@@ -33,6 +33,10 @@ def _scale_conditioning(conditioning, gains, multiplier):
         x = t.view(*t.shape[:-1], N_LAYERS, layer_dim)
         gv = g.view(*([1] * (x.dim() - 2)), N_LAYERS, 1).to(dtype=x.dtype, device=x.device)
         x = (x * gv * multiplier).reshape(t.shape)
+        # Vision tokens (Krea2 Style Reference) carry much larger norms than text; a big
+        # per-layer boost can push them to inf -> NaN -> black image. Clamp guards that.
+        if clamp and clamp > 0:
+            x = torch.clamp(x, -clamp, clamp)
         out.append([x, d.copy()])
     return out
 
@@ -67,6 +71,12 @@ class AzKrea2GatedRebalance(io.ComfyNode):
                     "overlap", default=0.0, min=0.0, max=0.5, step=0.01, optional=True,
                     tooltip="Soften the seam: both conds active +/- this around crossover. 0 = hard switch.",
                 ),
+                io.Float.Input(
+                    "clamp", default=0.0, min=0.0, max=1000.0, step=1.0, optional=True,
+                    tooltip="Clamp |rebalanced values| to this. 0 = off. Set ~30-60 when the input "
+                            "comes from Krea2 Style Reference: image tokens have large norms and the "
+                            "per-layer boost can overflow to NaN (black image).",
+                ),
             ],
             outputs=[
                 io.Conditioning.Output(display_name="conditioning"),
@@ -74,7 +84,7 @@ class AzKrea2GatedRebalance(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, conditioning, per_layer_weights, multiplier, crossover, overlap=0.0):
+    def execute(cls, conditioning, per_layer_weights, multiplier, crossover, overlap=0.0, clamp=0.0):
         vals = [v for v in (w.strip() for w in per_layer_weights.split(",")) if v != ""]
         if len(vals) != N_LAYERS:
             raise ValueError(f"'per_layer_weights' must have {N_LAYERS} numbers, got {len(vals)}")
@@ -83,7 +93,7 @@ class AzKrea2GatedRebalance(io.ComfyNode):
         except ValueError as e:
             raise ValueError(f"non-numeric value in 'per_layer_weights': {e}")
 
-        rebalanced = _scale_conditioning(conditioning, gains, multiplier)
+        rebalanced = _scale_conditioning(conditioning, gains, multiplier, clamp)
 
         early_end = min(1.0, crossover + overlap)
         late_start = max(0.0, crossover - overlap)

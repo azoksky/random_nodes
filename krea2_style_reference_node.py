@@ -1,3 +1,5 @@
+import hashlib
+
 import comfy
 import node_helpers
 from comfy_api.latest import io
@@ -32,20 +34,39 @@ _STYLE_SYSTEM = (
 
 _VISION_BLOCK = "<|vision_start|><|image_pad|><|vision_end|>"
 
+# Qwen3-VL rounds each side to a multiple of 32 (patch 16 * merge 2) and its image
+# processor caps at ~1280 visual tokens = 1280 * 32 * 32 pixels. Feeding more just gets
+# downscaled internally, so cap here and align to 32 to skip a redundant resize.
+_ALIGN = 32
+_MODEL_MAX_PX = 1280 * _ALIGN * _ALIGN  # ~1.31 MP
+
+_CACHE = {}
+
+
+def _round32(x):
+    return max(_ALIGN, int(round(x / _ALIGN)) * _ALIGN)
+
 
 def _scale_for_vision(image, megapixels):
-    # image: IMAGE tensor [B,H,W,C] float 0-1. Downscale oversized refs to ~megapixels
-    # so the vision tower isn't fed a needlessly huge frame; never upscale.
+    # image: IMAGE tensor [B,H,W,C] float 0-1. Downscale oversized refs toward the target
+    # (never upscale beyond it), align to 32, and never exceed the model's pixel cap.
     b, h, w, c = image.shape
-    target = max(1, int(megapixels * 1024 * 1024))
-    if h * w <= target:
+    target = min(int(megapixels * 1024 * 1024), _MODEL_MAX_PX)
+    cur = h * w
+    scale = (target / cur) ** 0.5 if cur > target else 1.0
+    nw = _round32(w * scale)
+    nh = _round32(h * scale)
+    if nw == w and nh == h:
         return image
-    scale = (target / (h * w)) ** 0.5
-    nw = max(1, round(w * scale))
-    nh = max(1, round(h * scale))
     s = image.movedim(-1, 1)
     s = comfy.utils.common_upscale(s, nw, nh, "area", "disabled")
     return s.movedim(1, -1)
+
+
+def _sig(t):
+    # Cheap, stable signature of a small tensor for cache keying.
+    t = t.detach().to("cpu", copy=False).contiguous()
+    return hashlib.sha1(t.numpy().tobytes()).hexdigest()
 
 
 class AzKrea2StyleReference(io.ComfyNode):
@@ -58,9 +79,11 @@ class AzKrea2StyleReference(io.ComfyNode):
             description="Local, API-free style reference for Krea 2. Pushes reference image(s) "
                         "through the Krea2 (Qwen3-VL) text encoder's vision path with a style-only "
                         "system prompt, so the output keeps the reference's aesthetic while all "
-                        "content comes from the text. Feed the CLIP loaded with type 'krea2'.",
+                        "content comes from the text. Feed the CLIP loaded with type 'krea2'; "
+                        "route LoRA/CLIP-patch nodes' CLIP output in and their patches apply.",
             inputs=[
-                io.Clip.Input("clip", tooltip="CLIP loaded with type 'krea2' (Qwen3-VL-4B)."),
+                io.Clip.Input("clip", tooltip="CLIP loaded with type 'krea2' (Qwen3-VL-4B). "
+                                              "Connect a LoRA/patch node's CLIP output to apply its patches."),
                 io.String.Input("prompt", multiline=True, default="",
                                 tooltip="Describes the CONTENT to generate. The reference supplies "
                                         "only the style."),
@@ -70,9 +93,10 @@ class AzKrea2StyleReference(io.ComfyNode):
                 io.Float.Input("style_strength", default=1.0, min=0.0, max=2.0, step=0.05,
                                tooltip="Overall conditioning strength honoured by the sampler. "
                                        "1.0 = neutral; lower for a looser influence, higher to push harder."),
-                io.Float.Input("vision_megapixels", default=1.0, min=0.1, max=8.0, step=0.1, optional=True,
-                               tooltip="References are downscaled to about this many megapixels before "
-                                       "the vision encoder. Higher keeps finer texture detail."),
+                io.Float.Input("vision_megapixels", default=0.5, min=0.1, max=1.3, step=0.05, optional=True,
+                               tooltip="References are downscaled to about this many megapixels (aligned to 32 px, "
+                                       "hard-capped at the model's ~1.31 MP). Lower = faster; style rarely needs "
+                                       "more than ~0.5 MP."),
                 io.String.Input("system_prompt", multiline=True, default="", optional=True,
                                 tooltip="Override the built-in style-only instruction. Leave empty to use "
                                         "the default."),
@@ -80,11 +104,12 @@ class AzKrea2StyleReference(io.ComfyNode):
             outputs=[
                 io.Conditioning.Output(display_name="conditioning"),
             ],
+            hidden=[io.Hidden.unique_id],
         )
 
     @classmethod
     def execute(cls, clip, prompt, style_image, style_image2=None, style_image3=None,
-                style_strength=1.0, vision_megapixels=1.0, system_prompt=""):
+                style_strength=1.0, vision_megapixels=0.5, system_prompt=""):
         if clip is None:
             raise ValueError("Krea2 Style Reference: no CLIP. Load one with type 'krea2'.")
 
@@ -103,8 +128,17 @@ class AzKrea2StyleReference(io.ComfyNode):
             "<|im_start|>assistant\n"
         )
 
-        tokens = clip.tokenize(text, images=images_vl, llama_template=template)
-        cond = clip.encode_from_tokens_scheduled(tokens)
+        # Re-encoding the vision tower is the expensive step; skip it when nothing that
+        # affects the encode changed (e.g. only the sampler seed moved). Keyed per node.
+        node_id = cls.hidden.unique_id
+        fp = (id(clip), text, tuple(_sig(v) for v in images_vl))
+        cached = _CACHE.get(node_id)
+        if cached and cached[0] == fp:
+            cond = cached[1]
+        else:
+            tokens = clip.tokenize(text, images=images_vl, llama_template=template)
+            cond = clip.encode_from_tokens_scheduled(tokens)
+            _CACHE[node_id] = (fp, cond)
 
         if abs(style_strength - 1.0) > 1e-6:
             cond = node_helpers.conditioning_set_values(cond, {"strength": style_strength})
