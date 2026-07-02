@@ -14,10 +14,12 @@ Because early structure is irreversible in diffusion, the clean late steps refin
 texture without re-censoring the subject.
 
 A knob set to 0 is IGNORED (that layer is left untouched), matching the LoRA
-convention where 0 means "no change". Translating a community LoRA's per-knob delta
-d into a knob value: value = 1 + s*d, where s is the LoRA strength.
-FB2 (knobs 9/10 only): d9 = -0.5117, d10 = -0.8906
-  s=1 -> 0.49 / 0.11    s=3 -> -0.54 / -1.67    s=5 -> -1.56 / -3.45
+convention where 0 means "no change". The knob value is `1 + d` for a per-knob
+delta d; `multiplier` is the LoRA strength, applied around the untouched pivot 1.0:
+  effective = 1 + multiplier * (knob - 1)
+So the knob holds the s=1 value and you dial strength with `multiplier` (no hand math).
+FB2 (knobs 9/10 only): d9 = -0.5117 (knob 0.4883), d10 = -0.8906 (knob 0.1094)
+  strength 1 -> 0.49 / 0.11    3 -> -0.54 / -1.67    5 -> -1.56 / -3.45
 
 Feed clean `CLIP Text Encode` -> this node -> KSampler positive.
 """
@@ -78,6 +80,12 @@ class AzKrea2GatedRebalance(io.ComfyNode):
                             "on 9/10 alone. Non-zero values also stiffen human rendering.",
                 ),
                 io.Float.Input(
+                    "multiplier", default=1.0, min=-100.0, max=100.0, step=0.05,
+                    tooltip="LoRA strength: scales each engaged knob's distance from 1.0 "
+                            "(effective = 1 + multiplier*(knob-1)). 1 = knob as-is; try 3-5 for full "
+                            "bypass. Untouched (0) knobs stay untouched.",
+                ),
+                io.Float.Input(
                     "crossover", default=0.5, min=0.0, max=1.0, step=0.01,
                     tooltip="Switch point. Higher = hold the rebalanced cond longer (stronger content); "
                             "lower = more clean steps (less plasticky).",
@@ -100,11 +108,11 @@ class AzKrea2GatedRebalance(io.ComfyNode):
 
     @classmethod
     def execute(cls, conditioning, knob9=0.4883, knob10=0.1094, knob11=0.0,
-                crossover=0.5, overlap=0.0, clamp=0.0):
+                multiplier=1.0, crossover=0.5, overlap=0.0, clamp=0.0):
         knob_map = {}
         for knob, val in ((9, knob9), (10, knob10), (11, knob11)):
             if val != 0.0:
-                knob_map[_KNOB_LAYER[knob]] = val
+                knob_map[_KNOB_LAYER[knob]] = 1.0 + multiplier * (val - 1.0)
 
         # No knobs engaged -> nothing to gate, pass the clean cond straight through.
         if not knob_map:
