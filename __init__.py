@@ -18,6 +18,7 @@ from .gated_lora_sampler_node import AzGatedLoraSampler
 from .prompt_enhancer_node import AzPromptEnhancer
 from .llama_server_node import AzLlamaEnhancer
 from .krea2_style_reference_node import AzKrea2StyleReference
+from .krea2_filter_knobs_node import AzKrea2FilterKnobs
 
 
 class RandomNodesExtension(ComfyExtension):
@@ -41,6 +42,7 @@ class RandomNodesExtension(ComfyExtension):
             AzPromptEnhancer,
             AzLlamaEnhancer,
             AzKrea2StyleReference,
+            AzKrea2FilterKnobs,
         ]
 
 
