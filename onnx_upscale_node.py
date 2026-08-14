@@ -207,56 +207,69 @@ class AzImageUpscaleWithOnnxModel(io.ComfyNode):
 
         in_img = image.movedim(-1, -3)
         output_device = comfy.model_management.intermediate_device()
+        n = in_img.shape[0]
+        native = upscale_model.scale
 
-        pre_shrunk = False
-        if (
-            scale_mode == "speed"
-            and output_scale > 0
-            and output_scale < upscale_model.scale - 1e-6
-        ):
-            pre_factor = output_scale / upscale_model.scale
-            pre_h = max(1, round(in_img.shape[2] * pre_factor))
-            pre_w = max(1, round(in_img.shape[3] * pre_factor))
-            in_img = comfy.utils.common_upscale(in_img, pre_w, pre_h, "lanczos", "disabled")
-            pre_shrunk = True
+        pre_factor = 1.0
+        if scale_mode == "speed" and 0 < output_scale < native - 1e-6:
+            pre_factor = output_scale / native
+        src_h = max(1, round(in_img.shape[2] * pre_factor))
+        src_w = max(1, round(in_img.shape[3] * pre_factor))
 
-        if tiled_inference:
-            t = tile
-            oom = True
-            while oom:
+        final = output_scale if output_scale > 0 else native
+        tgt_h = round(image.shape[1] * final)
+        tgt_w = round(image.shape[2] * final)
+
+        est_gib = n * tgt_h * tgt_w * 3 * 4 / 1024 ** 3
+        if est_gib > 4.0:
+            logging.warning(
+                f"AzImageUpscaleWithOnnxModel: returning {n} frames at {tgt_w}x{tgt_h} "
+                f"requires ~{est_gib:.1f} GiB of RAM to hold as one IMAGE batch. "
+                f"Process the source in chunks if that exceeds available memory."
+            )
+
+        tile_state = [tile]
+
+        def resize(t, w, h):
+            # "area" is box-averaging: the correct antialiasing filter when
+            # shrinking, and far cheaper than comfy's lanczos, which runs on
+            # CPU here and otherwise costs more than the inference itself.
+            method = "area" if w < t.shape[3] or h < t.shape[2] else "lanczos"
+            return comfy.utils.common_upscale(t, w, h, method, "disabled")
+
+        def upscale_one(frame):
+            if pre_factor != 1.0:
+                frame = resize(frame, src_w, src_h)
+            if not tiled_inference:
+                return run_batch(frame).to(output_device)
+            while True:
                 try:
-                    steps = in_img.shape[0] * comfy.utils.get_tiled_scale_steps(
-                        in_img.shape[3], in_img.shape[2], tile_x=t, tile_y=t, overlap=overlap
+                    return comfy.utils.tiled_scale(
+                        frame, run_batch, tile_x=tile_state[0], tile_y=tile_state[0],
+                        overlap=overlap, upscale_amount=native, output_device=output_device,
                     )
-                    pbar = comfy.utils.ProgressBar(steps)
-                    s = comfy.utils.tiled_scale(
-                        in_img, run_batch, tile_x=t, tile_y=t, overlap=overlap,
-                        upscale_amount=upscale_model.scale, pbar=pbar, output_device=output_device,
-                    )
-                    oom = False
                 except Exception as e:
-                    t //= 2
-                    if t < 64:
+                    tile_state[0] //= 2
+                    if tile_state[0] < 64:
                         raise e
-                    logging.warning(f"AzImageUpscaleWithOnnxModel: retrying with smaller tile size {t} after: {e}")
-        else:
-            # One image per session.run. Batching them into a single call
-            # multiplies peak activation memory by the batch size, and on
-            # Windows an over-budget allocation doesn't OOM -- it spills into
-            # shared system memory and crawls. Per-image also gives a real
-            # progress bar instead of one opaque step.
-            pbar = comfy.utils.ProgressBar(in_img.shape[0])
-            outs = []
-            for i in range(in_img.shape[0]):
-                outs.append(run_batch(in_img[i:i + 1]).to(output_device))
-                pbar.update(1)
-            s = torch.cat(outs, dim=0) if len(outs) > 1 else outs[0]
+                    logging.warning(
+                        f"AzImageUpscaleWithOnnxModel: retrying with smaller tile size {tile_state[0]} after: {e}"
+                    )
 
-        s = torch.clamp(s, min=0, max=1.0)
-
-        if not pre_shrunk and output_scale > 0 and abs(output_scale - upscale_model.scale) > 1e-3:
-            target_h = round(image.shape[1] * output_scale)
-            target_w = round(image.shape[2] * output_scale)
-            s = comfy.utils.common_upscale(s, target_w, target_h, "lanczos", "disabled")
+        # Resize each frame to its final size before storing it, and write into
+        # a preallocated buffer. Accumulating frames in a list and torch.cat-ing
+        # at the end needs two full copies of the result, and downsampling after
+        # the loop would hold every frame at the model's native scale first --
+        # for a few hundred video frames either one runs to tens of GiB.
+        s = None
+        pbar = comfy.utils.ProgressBar(n)
+        for i in range(n):
+            o = torch.clamp(upscale_one(in_img[i:i + 1]), min=0, max=1.0)
+            if o.shape[2] != tgt_h or o.shape[3] != tgt_w:
+                o = resize(o, tgt_w, tgt_h)
+            if s is None:
+                s = torch.empty((n, o.shape[1], tgt_h, tgt_w), dtype=torch.float32, device=output_device)
+            s[i] = o[0]
+            pbar.update(1)
 
         return io.NodeOutput(s.movedim(-3, -1))
