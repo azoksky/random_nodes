@@ -12,6 +12,8 @@ land exactly where the timeline needs them, spread evenly rather than
 periodically.
 """
 
+import logging
+
 import torch
 from comfy_api.latest import io
 
@@ -34,13 +36,16 @@ class AzFrameRateConvert(io.ComfyNode):
                 io.Float.Input("target_fps", default=30.0, min=1.0, max=240.0, step=0.001),
                 io.Combo.Input(
                     "mode",
-                    options=["blend", "nearest"],
-                    default="blend",
+                    options=["nearest", "blend"],
+                    default="nearest",
                     tooltip=(
-                        "blend: linearly cross-fades the two nearest source frames "
-                        "(smoothest, slight ghosting on fast motion). "
-                        "nearest: picks the closest single source frame "
-                        "(sharp, no ghosting, marginally less smooth)."
+                        "nearest: picks the closest single source frame. Every output "
+                        "frame stays sharp; timing jitters by up to half a source frame. "
+                        "blend: cross-fades the two neighbouring frames to hit the exact "
+                        "timestamp, but the blend weight cycles, so sharpness visibly "
+                        "pulses -- and it ghosts doubly on RIFE-generated frames. "
+                        "Prefer nearest, and pick a source_fps that is an integer "
+                        "multiple of target_fps so neither artifact occurs."
                     ),
                 ),
             ],
@@ -59,17 +64,27 @@ class AzFrameRateConvert(io.ComfyNode):
         n_out = max(1, round(duration * target_fps))
         ratio = source_fps / target_fps
 
-        out_frames = []
+        est_gib = n_out * images[0].nelement() * images.element_size() / 1024 ** 3
+        if est_gib > 4.0:
+            logging.warning(
+                f"AzFrameRateConvert: {n_out} output frames need ~{est_gib:.1f} GiB "
+                f"of RAM. Process the source in chunks if that exceeds available memory."
+            )
+
+        # Write straight into a preallocated buffer. Collecting frames in a list
+        # and torch.cat-ing needs a second full copy of the result, and in blend
+        # mode every frame is a freshly allocated tensor -- together that's two
+        # copies of a video-length batch.
+        out = torch.empty((n_out,) + tuple(images.shape[1:]), dtype=images.dtype)
         for i in range(n_out):
             src_pos = i * ratio
             if mode == "nearest":
-                idx = min(n_in - 1, round(src_pos))
-                out_frames.append(images[idx:idx + 1])
+                # floor(x+0.5), not round(): round() is banker's rounding, so
+                # exact .5 positions alternate down/up and the cadence stutters.
+                out[i] = images[min(n_in - 1, int(src_pos + 0.5))]
             else:
                 idx0 = min(n_in - 1, int(src_pos))
                 idx1 = min(n_in - 1, idx0 + 1)
-                frac = src_pos - idx0
-                frame = torch.lerp(images[idx0], images[idx1], frac)
-                out_frames.append(frame.unsqueeze(0))
+                torch.lerp(images[idx0], images[idx1], src_pos - idx0, out=out[i])
 
-        return io.NodeOutput(torch.cat(out_frames, dim=0))
+        return io.NodeOutput(out)
