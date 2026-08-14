@@ -189,6 +189,17 @@ class AzImageUpscaleWithOnnxModel(io.ComfyNode):
                         "sees less source resolution)."
                     ),
                 ),
+                io.Float.Input(
+                    "supersample", default=1.0, min=1.0, max=4.0, step=0.05,
+                    tooltip=(
+                        "Only used by scale_mode=speed. 1.0 shrinks the input so the "
+                        "model's native pass lands exactly on output_scale (cheapest). "
+                        "Higher values feed the model that much more source detail and "
+                        "downsample the surplus away, costing roughly supersample^2 as "
+                        "much. At native_scale/output_scale it equals quality mode, so "
+                        "it is the middle ground between the two."
+                    ),
+                ),
             ],
             outputs=[
                 io.Image.Output(),
@@ -196,7 +207,7 @@ class AzImageUpscaleWithOnnxModel(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, upscale_model, image, tiled_inference, tile, overlap, output_scale, scale_mode):
+    def execute(cls, upscale_model, image, tiled_inference, tile, overlap, output_scale, scale_mode, supersample):
         session = upscale_model.session
         np_dtype = upscale_model.np_dtype
 
@@ -212,7 +223,11 @@ class AzImageUpscaleWithOnnxModel(io.ComfyNode):
 
         pre_factor = 1.0
         if scale_mode == "speed" and 0 < output_scale < native - 1e-6:
-            pre_factor = output_scale / native
+            # supersample 1.0 shrinks so the native pass lands exactly on the
+            # target; higher values feed the model more source detail and
+            # downsample the surplus away, at (supersample^2) the cost. Past
+            # native/output_scale it degenerates into quality mode.
+            pre_factor = min(1.0, supersample * output_scale / native)
         src_h = max(1, round(in_img.shape[2] * pre_factor))
         src_w = max(1, round(in_img.shape[3] * pre_factor))
 
