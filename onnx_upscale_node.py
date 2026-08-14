@@ -132,9 +132,9 @@ class AzImageUpscaleWithOnnxModel(io.ComfyNode):
                 "Runs images through an ONNX upscale model. Tiling is off by "
                 "default; turn it on only if a full image doesn't fit in VRAM "
                 "(splitting into tiles adds blending overhead and is slower "
-                "when it isn't needed). output_scale lets you resize the "
-                "model's native output, e.g. to get an effective 2x result "
-                "out of a 4x model without a separate 2x model file."
+                "when it isn't needed). output_scale + scale_mode control the "
+                "final size relative to the model's native scale (e.g. get an "
+                "effective 2x out of a 4x model)."
             ),
             inputs=[
                 io.Custom("ONNX_UPSCALE_MODEL").Input("upscale_model"),
@@ -147,7 +147,19 @@ class AzImageUpscaleWithOnnxModel(io.ComfyNode):
                 io.Int.Input("overlap", default=32, min=0, max=256, step=8),
                 io.Float.Input(
                     "output_scale", default=0.0, min=0.0, max=8.0, step=0.05,
-                    tooltip="0 = keep the model's native scale. Otherwise resize the output to this factor of the input, e.g. 2.0 to downsample a 4x model's result to an effective 2x (still runs the full 4x pass, just resizes after -- doesn't reduce compute).",
+                    tooltip="0 = keep the model's native scale. Otherwise the final image is this factor of the input, e.g. 2.0 for an effective 2x from a 4x model. Combine with scale_mode below.",
+                ),
+                io.Combo.Input(
+                    "scale_mode", options=["quality", "speed"], default="quality",
+                    tooltip=(
+                        "Only matters when output_scale < the model's native scale. "
+                        "quality: run the model at full native scale on the full-size input, then "
+                        "downsample the result (max detail, same compute as native, e.g. a 4x pass). "
+                        "speed: shrink the input first so the model's native pass lands directly on "
+                        "output_scale (real compute savings -- roughly (output_scale/native_scale)^2 "
+                        "of the native cost -- at the expense of some fine detail, since the network "
+                        "sees less source resolution)."
+                    ),
                 ),
             ],
             outputs=[
@@ -156,7 +168,7 @@ class AzImageUpscaleWithOnnxModel(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, upscale_model, image, tiled_inference, tile, overlap, output_scale):
+    def execute(cls, upscale_model, image, tiled_inference, tile, overlap, output_scale, scale_mode):
         session = upscale_model.session
         np_dtype = upscale_model.np_dtype
 
@@ -167,6 +179,18 @@ class AzImageUpscaleWithOnnxModel(io.ComfyNode):
 
         in_img = image.movedim(-1, -3)
         output_device = comfy.model_management.intermediate_device()
+
+        pre_shrunk = False
+        if (
+            scale_mode == "speed"
+            and output_scale > 0
+            and output_scale < upscale_model.scale - 1e-6
+        ):
+            pre_factor = output_scale / upscale_model.scale
+            pre_h = max(1, round(in_img.shape[2] * pre_factor))
+            pre_w = max(1, round(in_img.shape[3] * pre_factor))
+            in_img = comfy.utils.common_upscale(in_img, pre_w, pre_h, "lanczos", "disabled")
+            pre_shrunk = True
 
         if tiled_inference:
             t = tile
@@ -203,7 +227,7 @@ class AzImageUpscaleWithOnnxModel(io.ComfyNode):
 
         s = torch.clamp(s, min=0, max=1.0)
 
-        if output_scale > 0 and abs(output_scale - upscale_model.scale) > 1e-3:
+        if not pre_shrunk and output_scale > 0 and abs(output_scale - upscale_model.scale) > 1e-3:
             target_h = round(image.shape[1] * output_scale)
             target_w = round(image.shape[2] * output_scale)
             s = comfy.utils.common_upscale(s, target_w, target_h, "lanczos", "disabled")
