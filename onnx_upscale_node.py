@@ -128,11 +128,27 @@ class AzImageUpscaleWithOnnxModel(io.ComfyNode):
             node_id="AzImageUpscaleWithOnnxModel",
             display_name="Upscale Image (using ONNX Model)",
             category="AZ_Nodes",
+            description=(
+                "Runs images through an ONNX upscale model. Tiling is off by "
+                "default; turn it on only if a full image doesn't fit in VRAM "
+                "(splitting into tiles adds blending overhead and is slower "
+                "when it isn't needed). output_scale lets you resize the "
+                "model's native output, e.g. to get an effective 2x result "
+                "out of a 4x model without a separate 2x model file."
+            ),
             inputs=[
                 io.Custom("ONNX_UPSCALE_MODEL").Input("upscale_model"),
                 io.Image.Input("image"),
+                io.Boolean.Input(
+                    "tiled_inference", default=False,
+                    tooltip="Split each image into overlapping tiles before upscaling. Only needed if a full image OOMs at your resolution.",
+                ),
                 io.Int.Input("tile", default=512, min=64, max=2048, step=32),
                 io.Int.Input("overlap", default=32, min=0, max=256, step=8),
+                io.Float.Input(
+                    "output_scale", default=0.0, min=0.0, max=8.0, step=0.05,
+                    tooltip="0 = keep the model's native scale. Otherwise resize the output to this factor of the input, e.g. 2.0 to downsample a 4x model's result to an effective 2x (still runs the full 4x pass, just resizes after -- doesn't reduce compute).",
+                ),
             ],
             outputs=[
                 io.Image.Output(),
@@ -140,11 +156,11 @@ class AzImageUpscaleWithOnnxModel(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, upscale_model, image, tile, overlap):
+    def execute(cls, upscale_model, image, tiled_inference, tile, overlap, output_scale):
         session = upscale_model.session
         np_dtype = upscale_model.np_dtype
 
-        def run_tile(a):
+        def run_batch(a):
             arr = a.cpu().numpy().astype(np_dtype)
             out = session.run([upscale_model.output_name], {upscale_model.input_name: arr})[0]
             return torch.from_numpy(out.astype(np.float32))
@@ -152,24 +168,44 @@ class AzImageUpscaleWithOnnxModel(io.ComfyNode):
         in_img = image.movedim(-1, -3)
         output_device = comfy.model_management.intermediate_device()
 
-        t = tile
-        oom = True
-        while oom:
+        if tiled_inference:
+            t = tile
+            oom = True
+            while oom:
+                try:
+                    steps = in_img.shape[0] * comfy.utils.get_tiled_scale_steps(
+                        in_img.shape[3], in_img.shape[2], tile_x=t, tile_y=t, overlap=overlap
+                    )
+                    pbar = comfy.utils.ProgressBar(steps)
+                    s = comfy.utils.tiled_scale(
+                        in_img, run_batch, tile_x=t, tile_y=t, overlap=overlap,
+                        upscale_amount=upscale_model.scale, pbar=pbar, output_device=output_device,
+                    )
+                    oom = False
+                except Exception as e:
+                    t //= 2
+                    if t < 64:
+                        raise e
+                    logging.warning(f"AzImageUpscaleWithOnnxModel: retrying with smaller tile size {t} after: {e}")
+        else:
             try:
-                steps = in_img.shape[0] * comfy.utils.get_tiled_scale_steps(
-                    in_img.shape[3], in_img.shape[2], tile_x=t, tile_y=t, overlap=overlap
-                )
-                pbar = comfy.utils.ProgressBar(steps)
-                s = comfy.utils.tiled_scale(
-                    in_img, run_tile, tile_x=t, tile_y=t, overlap=overlap,
-                    upscale_amount=upscale_model.scale, pbar=pbar, output_device=output_device,
-                )
-                oom = False
+                # One session.run call for the whole batch -- fastest path
+                # when the onnx graph has a dynamic batch axis.
+                s = run_batch(in_img).to(output_device)
             except Exception as e:
-                t //= 2
-                if t < 64:
-                    raise e
-                logging.warning(f"AzImageUpscaleWithOnnxModel: retrying with smaller tile size {t} after: {e}")
+                logging.warning(f"AzImageUpscaleWithOnnxModel: whole-batch pass failed ({e}), falling back to per-image.")
+                pbar = comfy.utils.ProgressBar(in_img.shape[0])
+                outs = []
+                for i in range(in_img.shape[0]):
+                    outs.append(run_batch(in_img[i:i + 1]).to(output_device))
+                    pbar.update(1)
+                s = torch.cat(outs, dim=0)
 
-        s = torch.clamp(s.movedim(-3, -1), min=0, max=1.0)
-        return io.NodeOutput(s)
+        s = torch.clamp(s, min=0, max=1.0)
+
+        if output_scale > 0 and abs(output_scale - upscale_model.scale) > 1e-3:
+            target_h = round(image.shape[1] * output_scale)
+            target_w = round(image.shape[2] * output_scale)
+            s = comfy.utils.common_upscale(s, target_w, target_h, "lanczos", "disabled")
+
+        return io.NodeOutput(s.movedim(-3, -1))
