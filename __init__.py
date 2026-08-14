@@ -19,6 +19,7 @@ from .prompt_enhancer_node import AzPromptEnhancer
 from .llama_server_node import AzLlamaEnhancer
 from .krea2_style_reference_node import AzKrea2StyleReference
 from .image_batch_list_node import AzImageBatchToList, AzImageListToBatch
+from .frame_rate_convert_node import AzFrameRateConvert
 
 
 class RandomNodesExtension(ComfyExtension):
@@ -44,6 +45,7 @@ class RandomNodesExtension(ComfyExtension):
             AzKrea2StyleReference,
             AzImageBatchToList,
             AzImageListToBatch,
+            AzFrameRateConvert,
         ]
 
 
