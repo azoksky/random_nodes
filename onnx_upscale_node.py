@@ -99,17 +99,45 @@ class AzOnnxUpscaleModelLoader(io.ComfyNode):
 
         providers = ["CPUExecutionProvider"]
         if provider == "CUDA" and "CUDAExecutionProvider" in ort.get_available_providers():
-            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            providers = [
+                # EXHAUSTIVE (the default) benchmarks every cuDNN conv algorithm
+                # for every distinct input shape it sees. Tiled inference feeds
+                # several different edge-tile shapes, so that search reruns over
+                # and over and its workspaces balloon VRAM. HEURISTIC picks an
+                # algorithm analytically instead.
+                ("CUDAExecutionProvider", {
+                    "cudnn_conv_algo_search": "HEURISTIC",
+                    "arena_extend_strategy": "kSameAsRequested",
+                    "do_copy_in_default_stream": True,
+                }),
+                "CPUExecutionProvider",
+            ]
         elif provider == "CUDA":
             logging.warning("AzOnnxUpscaleModelLoader: CUDAExecutionProvider not available, falling back to CPU.")
 
         sess_options = ort.SessionOptions()
         sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        sess_options.enable_cpu_mem_arena = False
         session = ort.InferenceSession(model_path, sess_options=sess_options, providers=providers)
 
         input_meta = session.get_inputs()[0]
         output_meta = session.get_outputs()[0]
         np_dtype = np.float16 if "float16" in input_meta.type else np.float32
+
+        # ComfyUI blocklists fp16 on GTX 16-series / T-series (TU116/TU117),
+        # whose dedicated FP16 cores emit NaNs -- see model_management's
+        # nvidia_16_series. That guard only covers ComfyUI's own torch path;
+        # onnxruntime honors the graph's fp16 dtype and hits the bad units
+        # directly, silently producing black/dark frames. Fail loudly instead.
+        if np_dtype == np.float16 and providers[0] != "CPUExecutionProvider":
+            if not comfy.model_management.should_use_fp16():
+                raise RuntimeError(
+                    f"'{model_name}' is an fp16 ONNX graph, but this GPU is one "
+                    "ComfyUI marks as fp16-broken, and onnxruntime can't upcast "
+                    "it the way ComfyUI upcasts fp16 .safetensors. It would run "
+                    "but output black/dark images. Use the fp32 build of this "
+                    "model instead, or set provider=CPU."
+                )
 
         # Probe with a small dummy tile to read the model's actual scale
         # factor off its output shape, instead of hardcoding 2x/4x.
@@ -212,18 +240,17 @@ class AzImageUpscaleWithOnnxModel(io.ComfyNode):
                         raise e
                     logging.warning(f"AzImageUpscaleWithOnnxModel: retrying with smaller tile size {t} after: {e}")
         else:
-            try:
-                # One session.run call for the whole batch -- fastest path
-                # when the onnx graph has a dynamic batch axis.
-                s = run_batch(in_img).to(output_device)
-            except Exception as e:
-                logging.warning(f"AzImageUpscaleWithOnnxModel: whole-batch pass failed ({e}), falling back to per-image.")
-                pbar = comfy.utils.ProgressBar(in_img.shape[0])
-                outs = []
-                for i in range(in_img.shape[0]):
-                    outs.append(run_batch(in_img[i:i + 1]).to(output_device))
-                    pbar.update(1)
-                s = torch.cat(outs, dim=0)
+            # One image per session.run. Batching them into a single call
+            # multiplies peak activation memory by the batch size, and on
+            # Windows an over-budget allocation doesn't OOM -- it spills into
+            # shared system memory and crawls. Per-image also gives a real
+            # progress bar instead of one opaque step.
+            pbar = comfy.utils.ProgressBar(in_img.shape[0])
+            outs = []
+            for i in range(in_img.shape[0]):
+                outs.append(run_batch(in_img[i:i + 1]).to(output_device))
+                pbar.update(1)
+            s = torch.cat(outs, dim=0) if len(outs) > 1 else outs[0]
 
         s = torch.clamp(s, min=0, max=1.0)
 
