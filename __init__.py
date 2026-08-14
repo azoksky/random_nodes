@@ -20,6 +20,7 @@ from .llama_server_node import AzLlamaEnhancer
 from .krea2_style_reference_node import AzKrea2StyleReference
 from .image_batch_list_node import AzImageBatchToList, AzImageListToBatch
 from .frame_rate_convert_node import AzFrameRateConvert
+from .onnx_upscale_node import AzOnnxUpscaleModelLoader, AzImageUpscaleWithOnnxModel
 
 
 class RandomNodesExtension(ComfyExtension):
@@ -46,6 +47,8 @@ class RandomNodesExtension(ComfyExtension):
             AzImageBatchToList,
             AzImageListToBatch,
             AzFrameRateConvert,
+            AzOnnxUpscaleModelLoader,
+            AzImageUpscaleWithOnnxModel,
         ]
 
 
